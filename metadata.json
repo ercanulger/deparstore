@@ -1,0 +1,6 @@
+{
+  "name": "DeparStore E-Ticaret & Admin Paneli",
+  "description": "DeparStore - Dinamik vitrin, arama/filtreleme, sepet, ödeme ve tam teşekküllü yönetici paneli içeren modern e-ticaret uygulaması.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

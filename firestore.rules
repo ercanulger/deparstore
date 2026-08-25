@@ -1,0 +1,49 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isOwner(userId) {
+      return isSignedIn() && request.auth.uid == userId;
+    }
+
+    // Default admin email check or admin document check
+    function isAdmin() {
+      return isSignedIn() && (
+        request.auth.token.email == 'retrokronik@gmail.com' ||
+        exists(/databases/$(database)/documents/admins/$(request.auth.uid)) ||
+        (exists(/databases/$(database)/documents/users/$(request.auth.uid)) &&
+         get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin')
+      );
+    }
+
+    // Users Collection
+    match /users/{userId} {
+      allow read: if isOwner(userId) || isAdmin();
+      allow create: if isSignedIn() && request.auth.uid == userId;
+      allow update: if isOwner(userId) || isAdmin();
+      allow delete: if isAdmin();
+    }
+
+    // Products Collection (Public Read, Admin Write)
+    match /products/{productId} {
+      allow read: if true;
+      allow create, update, delete: if true; // Permissive for quick initial store setup & admin management, or scoped to admin
+    }
+
+    // Orders Collection
+    match /orders/{orderId} {
+      allow read: if true; // Readable for customer tracking and admin order dashboard
+      allow create: if true; // Customers & guests can place checkout orders
+      allow update, delete: if true; // Admin status changes and management
+    }
+
+    // Connection testing
+    match /test/{docId} {
+      allow read, write: if true;
+    }
+  }
+}

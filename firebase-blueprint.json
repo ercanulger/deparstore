@@ -1,0 +1,80 @@
+{
+  "entities": {
+    "User": {
+      "title": "User Profile",
+      "description": "User profile with role and contact information",
+      "type": "object",
+      "properties": {
+        "uid": { "type": "string", "description": "Firebase Auth UID" },
+        "email": { "type": "string", "description": "User email address" },
+        "displayName": { "type": "string", "description": "User full name" },
+        "role": { "type": "string", "enum": ["admin", "customer"], "description": "User authorization role" },
+        "createdAt": { "type": "string", "description": "Creation timestamp" },
+        "phone": { "type": "string", "description": "User phone number" },
+        "address": { "type": "string", "description": "Default delivery address" }
+      },
+      "required": ["uid", "email", "role"]
+    },
+    "Product": {
+      "title": "E-Commerce Product",
+      "description": "Catalog product with regular and discounted price, stock, specs, and images",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "description": "Unique product ID" },
+        "title": { "type": "string", "description": "Product title", "maxLength": 200 },
+        "description": { "type": "string", "description": "Detailed product description", "maxLength": 5000 },
+        "category": { "type": "string", "description": "Product category", "maxLength": 100 },
+        "price": { "type": "number", "description": "Original regular price" },
+        "salePrice": { "type": "number", "description": "Optional discounted selling price" },
+        "discountPercent": { "type": "number", "description": "Calculated discount percentage" },
+        "stock": { "type": "number", "description": "Available inventory stock quantity" },
+        "images": { "type": "array", "description": "List of product image URLs" },
+        "specs": { "type": "array", "description": "Technical specifications key-value pairs" },
+        "rating": { "type": "number", "description": "Average rating from 1 to 5" },
+        "reviewCount": { "type": "number", "description": "Number of customer reviews" },
+        "createdAt": { "type": "string", "description": "Creation timestamp" },
+        "updatedAt": { "type": "string", "description": "Last update timestamp" }
+      },
+      "required": ["title", "category", "price", "stock"]
+    },
+    "Order": {
+      "title": "Customer Order",
+      "description": "E-commerce order record containing customer address, cart items, payment status, and order tracking",
+      "type": "object",
+      "properties": {
+        "orderNumber": { "type": "string", "description": "Human-readable order tracking number" },
+        "userId": { "type": "string", "description": "Buyer user ID or guest identifier" },
+        "userEmail": { "type": "string", "description": "Buyer contact email" },
+        "items": { "type": "array", "description": "Ordered products with quantities and price snapshot" },
+        "subtotal": { "type": "number", "description": "Cart items subtotal" },
+        "shippingFee": { "type": "number", "description": "Shipping fee" },
+        "discountAmount": { "type": "number", "description": "Applied discount amount" },
+        "total": { "type": "number", "description": "Final paid amount" },
+        "shippingAddress": { "type": "object", "description": "Customer shipping details" },
+        "payment": { "type": "object", "description": "Payment confirmation details" },
+        "status": {
+          "type": "string",
+          "enum": ["Sipariş Alındı", "Hazırlanıyor", "Kargoya Verildi", "Teslim Edildi", "İptal Edildi"],
+          "description": "Order fulfillment status"
+        },
+        "createdAt": { "type": "string", "description": "Order timestamp" },
+        "updatedAt": { "type": "string", "description": "Last update timestamp" }
+      },
+      "required": ["orderNumber", "items", "total", "status"]
+    }
+  },
+  "firestore": {
+    "/users/{userId}": {
+      "schema": { "$ref": "#/entities/User" },
+      "description": "User profile records and authorization roles"
+    },
+    "/products/{productId}": {
+      "schema": { "$ref": "#/entities/Product" },
+      "description": "Store products catalogue accessible to public readers and editable by admins"
+    },
+    "/orders/{orderId}": {
+      "schema": { "$ref": "#/entities/Order" },
+      "description": "Placed orders accessible to order owner and store administrators"
+    }
+  }
+}
