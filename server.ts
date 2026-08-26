@@ -9,15 +9,12 @@ dotenv.config({ path: ".env.local" });
 dotenv.config();
 
 // Lemon Squeezy credentials.
-// SECURITY: This key was pasted into a chat/log and shipped in source before -
-// it must be treated as already leaked. Rotate it in the Lemon Squeezy
-// dashboard (Settings -> API) and set the NEW key only via the
-// LEMON_SQUEEZY_API_KEY environment variable on the hosting platform - never
-// commit it to source again. The hardcoded value below is kept only as a
-// temporary fallback so the store keeps working while you migrate; remove it
-// once the env var is confirmed to be set in production.
-const DEFAULT_LEMON_API_KEY =
-  "eyJ0eXAiOiJKV1QiLCJhbGciOiJSUzI1NiJ9.eyJhdWQiOiI5NGQ1OWNlZi1kYmI4LTRlYTUtYjE3OC1kMjU0MGZjZDY5MTkiLCJqdGkiOiJmM2I5OGRjNTY2N2M1NmQ0Y2I0MzA1YWFkMzY1ZmM5OTU2NjYzNGU1NTNlYjc5OThiZGI3NjY2M2M3NzExMTUzMDkxOGI3ZDkwMDA2ZjA3MyIsImlhdCI6MTc4NzcxMDY1MC4zMTQwMTcsIm5iZiI6MTc4NzcxMDY1MC4zMTQwMiwiZXhwIjoxODAzNjAwMDAwLjAyNTgzMiwic3ViIjoiNzgzOTcyOSIsInNjb3BlcyI6W119.Xtz0K3bO5qtEijcLJgTqJ28E4Ka4GC7GOiJPc6a42ia9xyK0QIdRLGiCag6bgq-vn7HOvTltuxl8I2ycGFCvl7n-gVHGbfK03-1WSHZmFwUdgfaf1IxUKfK718ZqQhptdizqXFdS7Bm7PovWREnV9WTV_js-QUomGL_bKgGd-lLmCyfQ9YagGDzKvqb04Zzd3jxtt2ZXJIAwPhwRT1BS88qsOGKoEt_2zPpLJcUJGbIyWDUk2l1kooCuhMrZ9ZnW1QYdOgM9HqelBL1XOvn04s28KUU3bLEIqolDwrGRAaafIDOH4bsdjRoOacOE97zEOJjQGCYXi4ZOaoinH_j-gF4KsrSFQ7L6pShmcXVCjQVuOzqO2ADjz210Ctubrc_VxoAceWBvdQn1_Oz06H1eHaYvcRgcap5snTXdaAt__Ywr9hawYcRged6Cu542Tp-lhQ0U5XR9M7zK4wUvG_gmCgOXHpPIpV_iyKVsFVIlpWNKe2kz70XNMJWnAvmikMzxghcAijehpSGSdsSMV05bjyzl_OrxE2cjGwc7IvVb23RG1v7DmVnLE8GFT5MGnFz5VBHgm29zTcOmf8g0uteEJE5sT3FwiPsyirOstyI0XnAj07W7kGOjfc_UpDS7aNmpKVGVVnHeql3R86Pie7ceecfbNcH9mMESCxMBp_i-olo";
+// SECURITY: a real API key used to be hardcoded here as a fallback. That
+// key must be treated as permanently leaked (it lived in source control) -
+// rotate it in the Lemon Squeezy dashboard (Settings -> API) if you haven't
+// already. The server now REQUIRES the key via the LEMON_SQUEEZY_API_KEY
+// environment variable and refuses to start a checkout without it. Never
+// hardcode a real key here again.
 const DEFAULT_STORE_ID = "460280";
 const DEFAULT_VARIANT_ID = "2059055";
 
@@ -66,7 +63,7 @@ async function startServer() {
         });
       }
 
-      const apiKey = process.env.LEMON_SQUEEZY_API_KEY || DEFAULT_LEMON_API_KEY;
+      const apiKey = process.env.LEMON_SQUEEZY_API_KEY;
       const storeId = (process.env.LEMON_SQUEEZY_STORE_ID || DEFAULT_STORE_ID).replace("#", "").trim();
       const variantId = (process.env.LEMON_SQUEEZY_VARIANT_ID || DEFAULT_VARIANT_ID).replace("#", "").trim();
 
@@ -204,8 +201,17 @@ async function startServer() {
   // Lemon Squeezy Webhook Listener
   app.post("/api/webhook", async (req: any, res) => {
     try {
-      const webhookSecret = process.env.LEMON_SQUEEZY_WEBHOOK_SECRET || "depar_secret_key_2026";
+      // SECURITY: the fallback secret that used to live here ("depar_secret_key_2026")
+      // was committed to source control, so it must be treated as public/guessable,
+      // not secret. Set a real, private value via the LEMON_SQUEEZY_WEBHOOK_SECRET
+      // env var (and configure the same value in the Lemon Squeezy webhook settings).
+      const webhookSecret = process.env.LEMON_SQUEEZY_WEBHOOK_SECRET;
       const signatureHeader = req.get("X-Signature") || "";
+
+      if (!webhookSecret) {
+        console.error("LEMON_SQUEEZY_WEBHOOK_SECRET is not set - rejecting webhook.");
+        return res.status(500).json({ error: "Webhook secret is not configured" });
+      }
 
       // Signature verification with crypto timing safe equal
       if (req.rawBody && signatureHeader) {
