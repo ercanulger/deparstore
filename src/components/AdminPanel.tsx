@@ -1159,17 +1159,27 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
                   <span className="w-2 h-2 rounded-full bg-rose-500" />
                   Başarısız ({orders.filter((o) => o.status === 'Başarısız' || o.status === 'İptal Edildi').length})
                 </button>
-
-                <button
-                  onClick={handleDeleteAllOrders}
-                  disabled={orders.length === 0 || isClearingOrders}
-                  className="ml-1 px-3 py-1.5 rounded-xl font-semibold transition cursor-pointer border bg-white text-rose-700 border-rose-300 hover:bg-rose-50 flex items-center gap-1.5 disabled:opacity-40 disabled:cursor-not-allowed"
-                  title="Tüm sipariş geçmişini kalıcı olarak sil"
-                >
-                  <Trash2 className="w-3.5 h-3.5" />
-                  <span>{isClearingOrders ? 'Siliniyor...' : 'Sipariş Geçmişini Temizle'}</span>
-                </button>
               </div>
+            </div>
+
+            {/* SİPARİŞ DÜZENLE - Tüm sipariş kayıtlarını sistemden (Firestore'dan)
+                kalıcı ve online olarak komple silmek için */}
+            <div className="rounded-2xl border-2 border-rose-200 bg-rose-50/60 p-5 space-y-3">
+              <h2 className="text-base font-bold text-rose-900 flex items-center gap-2">
+                <Trash2 className="w-4 h-4 text-rose-700" />
+                Sipariş Düzenle
+              </h2>
+              <p className="text-xs text-rose-800/90 leading-relaxed max-w-2xl">
+                Aşağıdaki butona bastığında, sistemde kayıtlı <strong>tüm siparişler ({orders.length} adet)</strong> Firestore veritabanından anında ve kalıcı olarak silinir. Bu işlem geri alınamaz ve tüm kullanıcılar için online olarak hemen etkili olur.
+              </p>
+              <button
+                onClick={handleDeleteAllOrders}
+                disabled={orders.length === 0 || isClearingOrders}
+                className="px-4 py-2.5 rounded-xl font-bold text-sm transition cursor-pointer bg-rose-600 hover:bg-rose-700 text-white shadow-sm flex items-center gap-2 disabled:opacity-40 disabled:cursor-not-allowed"
+              >
+                <Trash2 className="w-4 h-4" />
+                <span>{isClearingOrders ? 'Siliniyor...' : `Tüm Sipariş Geçmişini Sil (${orders.length})`}</span>
+              </button>
             </div>
 
             {/* Orders List */}
