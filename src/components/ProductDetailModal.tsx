@@ -24,16 +24,13 @@ import { Product, Order } from '../types';
 import { formatPrice, calculateDiscount, generateOrderNumber } from '../lib/utils';
 import { useCart } from '../context/CartContext';
 import { useAuth } from '../context/AuthContext';
-import { doc, setDoc } from 'firebase/firestore';
-import { db } from '../lib/firebase';
-import { createLemonCheckout, redirectToLemonCheckout, getSuccessRedirectUrl } from '../lib/lemonSqueezy';
+import { createLemonCheckout, redirectToLemonCheckout, getSuccessRedirectUrl, savePendingOrder } from '../lib/lemonSqueezy';
 import { RedirectingOverlay } from './RedirectingOverlay';
 
 interface ProductDetailModalProps {
   product: Product | null;
   onClose: () => void;
   onDirectCheckout: (product: Product, quantity: number) => void;
-  onOrderInitiated?: (order: Order) => void;
   whatsappNumber?: string;
 }
 
@@ -41,7 +38,6 @@ export const ProductDetailModal: React.FC<ProductDetailModalProps> = ({
   product,
   onClose,
   onDirectCheckout,
-  onOrderInitiated,
   whatsappNumber = '905010000000',
 }) => {
   if (!product) return null;
@@ -125,18 +121,11 @@ export const ProductDetailModal: React.FC<ProductDetailModalProps> = ({
       createdAt: new Date().toISOString(),
     };
 
-    // Save order record to Firestore
-    try {
-      await setDoc(doc(db, 'orders', newOrder.id), newOrder);
-      localStorage.setItem('deparstore_active_order_id', newOrder.id);
-    } catch (e) {
-      console.warn('Firestore order write note:', e);
-      localStorage.setItem('deparstore_active_order_id', newOrder.id);
-    }
-
-    if (onOrderInitiated) {
-      onOrderInitiated(newOrder);
-    }
+    // Sipariş, ödeme GERÇEKTEN tamamlanmadan Firestore'a yazılmaz ve
+    // "Sipariş Durum Takibi" ekranı açılmaz. Bunlar yalnızca kullanıcı
+    // Lemon Squeezy'de ödemeyi bitirip başarı sayfasına döndüğünde
+    // gerçekleşir (bkz. App.tsx). Taslak burada sadece yerelde saklanır.
+    savePendingOrder(orderNumber, newOrder);
 
     // Call dynamic backend API with current product price
     const result = await createLemonCheckout({

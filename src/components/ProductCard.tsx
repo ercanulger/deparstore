@@ -3,10 +3,8 @@ import { ShoppingBag, Star, Eye, Check, Zap, ShieldCheck, Sparkles, ExternalLink
 import { Product } from '../types';
 import { formatPrice, calculateDiscount, generateOrderNumber } from '../lib/utils';
 import { useCart } from '../context/CartContext';
-import { createLemonCheckout, redirectToLemonCheckout, getSuccessRedirectUrl } from '../lib/lemonSqueezy';
+import { createLemonCheckout, redirectToLemonCheckout, getSuccessRedirectUrl, savePendingOrder } from '../lib/lemonSqueezy';
 import { RedirectingOverlay } from './RedirectingOverlay';
-import { doc, setDoc } from 'firebase/firestore';
-import { db } from '../lib/firebase';
 import { useAuth } from '../context/AuthContext';
 
 interface ProductCardProps {
@@ -78,12 +76,11 @@ export const ProductCard: React.FC<ProductCardProps> = ({ product, onOpenDetails
       createdAt: new Date().toISOString(),
     };
 
-    try {
-      await setDoc(doc(db, 'orders', orderPayload.id), orderPayload);
-      localStorage.setItem('deparstore_active_order_id', orderPayload.id);
-    } catch (err) {
-      console.warn('Firestore order write error:', err);
-    }
+    // Sipariş, ödeme GERÇEKTEN tamamlanmadan Firestore'a yazılmaz.
+    // Aksi halde ödeme sayfasından vazgeçilen/iptal edilen denemeler de
+    // sipariş geçmişinde görünürdü. Taslak, ödeme başarıyla bitip
+    // kullanıcı geri yönlendirildiğinde yazılmak üzere yerelde saklanır.
+    savePendingOrder(orderNumber, orderPayload);
 
     const res = await createLemonCheckout({
       productId: product.id,
