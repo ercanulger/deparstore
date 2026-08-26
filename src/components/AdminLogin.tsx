@@ -1,36 +1,69 @@
 import React, { useState } from 'react';
-import { Lock, User, ShieldCheck, ArrowRight, AlertCircle, Eye, EyeOff } from 'lucide-react';
+import { Lock, Mail, ShieldCheck, ArrowRight, AlertCircle, Eye, EyeOff } from 'lucide-react';
+import { signInWithEmailAndPassword, signOut as fbSignOut } from 'firebase/auth';
+import { doc, getDoc } from 'firebase/firestore';
+import { auth, db } from '../lib/firebase';
 
 interface AdminLoginProps {
   onLoginSuccess: () => void;
   onBackToStore: () => void;
 }
 
+const MASTER_ADMIN_EMAIL = 'retrokronik@gmail.com';
+
+// NOT: Yönetici girişi artık gerçek Firebase Authentication üzerinden
+// doğrulanıyor. Daha önce burada sabit kodlanmış bir kullanıcı adı/şifre
+// kontrolü vardı (örn. "ercan" / "7207") ve bu, sadece tarayıcıda bir
+// localStorage bayrağı set ediyordu - Firestore güvenlik kurallarıyla hiçbir
+// bağlantısı yoktu. Kurallar sıkılaştırıldığında (bkz. firestore.rules,
+// isAdmin() artık gerçek request.auth bekliyor) o eski sahte giriş ekrana
+// girmeye devam etse bile hiçbir ürün/sipariş yazma işlemi çalışmazdı.
+// Bu yüzden panele girebilmek için artık Firebase'de gerçek bir hesabın
+// (retrokronik@gmail.com ya da Firestore'da users/{uid}.role == 'admin'
+// olan bir hesabın) e-posta + şifresiyle giriş yapılması gerekiyor.
 export const AdminLogin: React.FC<AdminLoginProps> = ({ onLoginSuccess, onBackToStore }) => {
-  const [username, setUsername] = useState('');
+  const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
 
-  const handleLogin = (e: React.FormEvent) => {
+  const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
     setErrorMsg(null);
     setLoading(true);
 
-    const cleanUsername = username.trim().toLowerCase();
-    const cleanPassword = password.trim();
+    const cleanEmail = email.trim().toLowerCase();
 
-    setTimeout(() => {
-      if ((cleanUsername === 'ercan' || cleanUsername === 'ercanulger') && cleanPassword === '7207') {
-        sessionStorage.setItem('deparstore_admin_auth', 'true');
-        localStorage.setItem('deparstore_admin_auth', 'true');
-        onLoginSuccess();
-      } else {
-        setErrorMsg('Geçersiz kullanıcı adı veya şifre girdiniz.');
+    try {
+      const cred = await signInWithEmailAndPassword(auth, cleanEmail, password);
+
+      const isMaster = cred.user.email?.toLowerCase() === MASTER_ADMIN_EMAIL.toLowerCase();
+      let isAdminUser = isMaster;
+
+      if (!isAdminUser) {
+        const userSnap = await getDoc(doc(db, 'users', cred.user.uid));
+        isAdminUser = userSnap.exists() && userSnap.data()?.role === 'admin';
       }
+
+      if (!isAdminUser) {
+        // Firebase'e giriş başarılı ama bu hesabın admin yetkisi yok -
+        // oturumu kapat, müşteri hesabıyla panele girilmiş olmasın.
+        await fbSignOut(auth);
+        setErrorMsg('Bu hesabın yönetici paneline erişim yetkisi bulunmuyor.');
+        setLoading(false);
+        return;
+      }
+
+      sessionStorage.setItem('deparstore_admin_auth', 'true');
+      localStorage.setItem('deparstore_admin_auth', 'true');
+      onLoginSuccess();
+    } catch (err: any) {
+      console.warn('Admin login error:', err);
+      setErrorMsg('Geçersiz e-posta veya şifre girdiniz.');
+    } finally {
       setLoading(false);
-    }, 300);
+    }
   };
 
   return (
@@ -50,7 +83,7 @@ export const AdminLogin: React.FC<AdminLoginProps> = ({ onLoginSuccess, onBackTo
             DeparStore Yönetim Girişi
           </h1>
           <p className="text-xs text-zinc-400 font-normal">
-            Yönetim paneline erişmek için yetkili bilgilerinizi giriniz.
+            Yönetim paneline erişmek için yetkili Firebase hesabınızla giriş yapın.
           </p>
         </div>
 
@@ -66,18 +99,18 @@ export const AdminLogin: React.FC<AdminLoginProps> = ({ onLoginSuccess, onBackTo
         <form onSubmit={handleLogin} className="space-y-4 text-xs">
           
           <div className="space-y-1.5">
-            <label className="font-semibold text-zinc-300 block">Kullanıcı Adı</label>
+            <label className="font-semibold text-zinc-300 block">E-posta</label>
             <div className="relative">
               <input
-                type="text"
+                type="email"
                 required
                 autoComplete="username"
-                value={username}
-                onChange={(e) => setUsername(e.target.value)}
-                placeholder="Kullanıcı adınızı girin"
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                placeholder="ornek@eposta.com"
                 className="w-full pl-9 pr-3.5 py-2.5 bg-zinc-900/90 border border-zinc-700 rounded-xl text-white placeholder-zinc-500 text-xs focus:ring-1 focus:ring-emerald-500 focus:border-emerald-500 focus:outline-none transition"
               />
-              <User className="w-4 h-4 text-zinc-500 absolute left-3 top-3" />
+              <Mail className="w-4 h-4 text-zinc-500 absolute left-3 top-3" />
             </div>
           </div>
 
@@ -90,7 +123,7 @@ export const AdminLogin: React.FC<AdminLoginProps> = ({ onLoginSuccess, onBackTo
                 autoComplete="current-password"
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
-                placeholder="••••"
+                placeholder="••••••••"
                 className="w-full pl-9 pr-10 py-2.5 bg-zinc-900/90 border border-zinc-700 rounded-xl text-white placeholder-zinc-500 text-xs focus:ring-1 focus:ring-emerald-500 focus:border-emerald-500 focus:outline-none transition font-mono"
               />
               <Lock className="w-4 h-4 text-zinc-500 absolute left-3 top-3" />
