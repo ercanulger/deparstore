@@ -18,6 +18,7 @@ export const ProductCard: React.FC<ProductCardProps> = ({ product, onOpenDetails
   const { user, userProfile } = useAuth();
   const [isAdded, setIsAdded] = useState(false);
   const [isLoadingCheckout, setIsLoadingCheckout] = useState(false);
+  const [checkoutError, setCheckoutError] = useState<string | null>(null);
 
   const discountPercent =
     product.discountPercent || calculateDiscount(product.price, product.salePrice);
@@ -38,6 +39,7 @@ export const ProductCard: React.FC<ProductCardProps> = ({ product, onOpenDetails
     if (isOutOfStock || isLoadingCheckout) return;
 
     setIsLoadingCheckout(true);
+    setCheckoutError(null);
 
     const orderNumber = generateOrderNumber();
     const orderPayload = {
@@ -97,8 +99,10 @@ export const ProductCard: React.FC<ProductCardProps> = ({ product, onOpenDetails
       redirectToLemonCheckout(res.url);
     } else {
       setIsLoadingCheckout(false);
-      // If checkout fails, fallback to opening details modal
-      onOpenDetails(product);
+      // Surface the real error instead of silently swallowing it -
+      // previously this just reopened the details modal with no explanation.
+      setCheckoutError(res.error || 'Ödeme bağlantısı oluşturulamadı. Lütfen tekrar deneyin.');
+      setTimeout(() => setCheckoutError(null), 5000);
     }
   };
 
@@ -278,6 +282,15 @@ export const ProductCard: React.FC<ProductCardProps> = ({ product, onOpenDetails
               </span>
             </button>
           </div>
+
+          {checkoutError && (
+            <div
+              onClick={(e) => e.stopPropagation()}
+              className="mt-2 text-[11px] leading-snug text-red-600 bg-red-50 border border-red-200 rounded-lg px-2.5 py-1.5"
+            >
+              {checkoutError}
+            </div>
+          )}
         </div>
       </div>
     </div>
