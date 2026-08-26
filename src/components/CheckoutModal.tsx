@@ -22,6 +22,7 @@ import { useCart } from '../context/CartContext';
 import { Order, OrderAddress, PaymentDetails } from '../types';
 import { formatPrice, generateOrderNumber } from '../lib/utils';
 import { createLemonCheckout, redirectToLemonCheckout, getSuccessRedirectUrl } from '../lib/lemonSqueezy';
+import { RedirectingOverlay } from './RedirectingOverlay';
 
 interface CheckoutModalProps {
   isOpen: boolean;
@@ -218,6 +219,7 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
 
   return (
     <div className="fixed inset-0 z-50 overflow-y-auto bg-black/40 backdrop-blur-xs flex items-center justify-center p-4 sm:p-6 animate-in fade-in duration-150">
+      <RedirectingOverlay show={isLemonLoading} />
       
       <div
         className="bg-white rounded-2xl max-w-2xl w-full shadow-xl border border-zinc-200/80 overflow-hidden relative animate-in zoom-in-95 duration-150"

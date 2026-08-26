@@ -30,6 +30,7 @@ export const PaymentSuccessPage: React.FC<PaymentSuccessPageProps> = ({
   whatsappNumber,
 }) => {
   const [copied, setCopied] = useState(false);
+  const [secondsLeft, setSecondsLeft] = useState(15);
   const matchedOrder = orders.find(
     (o) => o.id === orderId || o.orderNumber === orderId
   );
@@ -47,6 +48,23 @@ export const PaymentSuccessPage: React.FC<PaymentSuccessPageProps> = ({
       console.warn('Confetti effect note:', e);
     }
   }, []);
+
+  // Automatically return to the homepage a short while after payment
+  // completes, so the customer isn't left stranded on this page.
+  useEffect(() => {
+    const countdown = setInterval(() => {
+      setSecondsLeft((prev) => (prev > 0 ? prev - 1 : 0));
+    }, 1000);
+
+    const redirectTimer = setTimeout(() => {
+      onGoHome();
+    }, 15000);
+
+    return () => {
+      clearInterval(countdown);
+      clearTimeout(redirectTimer);
+    };
+  }, [onGoHome]);
 
   const handleCopyOrderNumber = () => {
     const text = matchedOrder?.orderNumber || orderId || 'DEP-ORDER';
@@ -190,6 +208,11 @@ export const PaymentSuccessPage: React.FC<PaymentSuccessPageProps> = ({
               <ShieldCheck className="w-4 h-4 text-emerald-500" />
               <span>Lemon Squeezy 256-Bit SSL Güvenli Altyapısı</span>
             </div>
+            <p className="text-[11px] text-zinc-400 mt-2">
+              {secondsLeft > 0
+                ? `${secondsLeft} saniye içinde ana sayfaya yönlendirileceksiniz...`
+                : 'Yönlendiriliyorsunuz...'}
+            </p>
           </div>
         </div>
       </div>

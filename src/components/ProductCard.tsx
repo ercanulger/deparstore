@@ -4,6 +4,7 @@ import { Product } from '../types';
 import { formatPrice, calculateDiscount, generateOrderNumber } from '../lib/utils';
 import { useCart } from '../context/CartContext';
 import { createLemonCheckout, redirectToLemonCheckout, getSuccessRedirectUrl } from '../lib/lemonSqueezy';
+import { RedirectingOverlay } from './RedirectingOverlay';
 import { doc, setDoc } from 'firebase/firestore';
 import { db } from '../lib/firebase';
 import { useAuth } from '../context/AuthContext';
@@ -116,6 +117,7 @@ export const ProductCard: React.FC<ProductCardProps> = ({ product, onOpenDetails
       onClick={() => onOpenDetails(product)}
       className="group bg-white rounded-xl border border-zinc-200/80 hover:border-zinc-400 shadow-xs hover:shadow-md transition-all duration-200 flex flex-col justify-between overflow-hidden cursor-pointer relative"
     >
+      <RedirectingOverlay show={isLoadingCheckout} />
       {/* Top Image Container */}
       <div className="relative aspect-square w-full bg-zinc-900 overflow-hidden">
         

@@ -27,6 +27,7 @@ import { useAuth } from '../context/AuthContext';
 import { doc, setDoc } from 'firebase/firestore';
 import { db } from '../lib/firebase';
 import { createLemonCheckout, redirectToLemonCheckout, getSuccessRedirectUrl } from '../lib/lemonSqueezy';
+import { RedirectingOverlay } from './RedirectingOverlay';
 
 interface ProductDetailModalProps {
   product: Product | null;
@@ -168,6 +169,7 @@ export const ProductDetailModal: React.FC<ProductDetailModalProps> = ({
 
   return (
     <div className="fixed inset-0 z-50 overflow-y-auto bg-black/60 backdrop-blur-xs flex items-center justify-center p-3 sm:p-6 animate-in fade-in duration-150">
+      <RedirectingOverlay show={isCheckoutLoading} />
       
       {/* Modal Container */}
       <div
