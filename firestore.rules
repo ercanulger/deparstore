@@ -41,6 +41,11 @@ service cloud.firestore {
       allow update, delete: if true; // Admin status changes and management
     }
 
+    // Store Settings Collection
+    match /settings/{settingId} {
+      allow read, write: if true;
+    }
+
     // Connection testing
     match /test/{docId} {
       allow read, write: if true;

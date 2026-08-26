@@ -11,6 +11,7 @@ import {
   ShoppingBag,
   ShieldCheck,
   CheckCircle,
+  Check,
   AlertCircle,
   RefreshCw,
   Search,
@@ -36,7 +37,7 @@ import {
 import { doc, setDoc, deleteDoc, updateDoc } from 'firebase/firestore';
 import { db, uploadProductImage } from '../lib/firebase';
 import { Product, Order, OrderStatus, TechnicalSpec } from '../types';
-import { formatPrice, formatDate, calculateDiscount } from '../lib/utils';
+import { formatPrice, formatDate, calculateDiscount, formatExternalUrl } from '../lib/utils';
 import { exportProjectZip } from '../lib/zipExporter';
 import { INITIAL_PRODUCTS, INITIAL_CATEGORIES } from '../data/initialProducts';
 
@@ -194,6 +195,10 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
 
     const productId = editingProductId || `prod_${Date.now()}`;
 
+    const formattedPaymentUrl = paymentUrl && paymentUrl.trim() !== ''
+      ? formatExternalUrl(paymentUrl)
+      : `https://deparstore.lemonsqueezy.com/buy/${productId}`;
+
     const productPayload: Product = {
       id: productId,
       title,
@@ -205,7 +210,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
       description: description || 'Detaylı ürün açıklaması eklenmedi.',
       images: finalImages,
       specs: cleanSpecs,
-      paymentUrl: paymentUrl || `https://deparstore.lemonsqueezy.com/buy/${productId}`,
+      paymentUrl: formattedPaymentUrl,
       deliveryTime: deliveryTime || 'Anında Dijital Teslimat',
       platform: platform || 'Tüm Platformlar',
       badge: badge || undefined,
@@ -219,7 +224,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
       const prodRef = doc(db, 'products', productId);
       await setDoc(prodRef, productPayload);
       setProductSuccessFeedback(
-        editingProductId ? 'Ürün başarıyla güncellendi!' : 'Yeni ürün başarıyla kataloğa eklendi ve Lemon Squeezy bağlantısı tanımlandı!'
+        editingProductId ? 'Ürün başarıyla güncellendi!' : 'Yeni ürün başarıyla kataloğa eklendi ve güvenli ödeme bağlantısı tanımlandı!'
       );
       onRefreshData();
       if (!editingProductId) {
@@ -227,7 +232,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
       }
     } catch (err: any) {
       console.warn('Firestore write warning:', err);
-      setProductSuccessFeedback('Ürün başarıyla kaydedildi.');
+      setProductSuccessFeedback('Ürün kaydedildi.');
     } finally {
       setSubmittingProduct(false);
     }
@@ -290,13 +295,29 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
     (o) => o.status === 'İnceleniyor' || o.status === 'Sipariş Alındı'
   ).length;
 
-  const handleSaveSettings = () => {
+  const handleSaveSettings = async () => {
     if (onUpdateWhatsApp) {
       onUpdateWhatsApp(storeWhatsApp);
     }
     localStorage.setItem('deparstore_whatsapp', storeWhatsApp);
     localStorage.setItem('deparstore_welcome_msg', storeWelcomeMsg);
     localStorage.setItem('deparstore_lemon_url', defaultLemonStore);
+    
+    try {
+      await setDoc(
+        doc(db, 'settings', 'general'),
+        {
+          whatsappNumber: storeWhatsApp,
+          welcomeMessage: storeWelcomeMsg,
+          defaultLemonStore: defaultLemonStore,
+          updatedAt: new Date().toISOString(),
+        },
+        { merge: true }
+      );
+    } catch (e) {
+      console.warn('Firestore settings write note:', e);
+    }
+
     setSettingsSavedFeedback(true);
     setTimeout(() => setSettingsSavedFeedback(false), 3000);
   };
@@ -628,22 +649,21 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
                   </div>
                 )}
 
-                {/* Lemon Squeezy Payment Link (CRITICAL) */}
-                <div className="space-y-1 sm:col-span-3 bg-amber-50/70 p-3 rounded-xl border border-amber-200">
+                {/* Lemon Squeezy Dynamic Pricing Integration Card */}
+                <div className="space-y-1.5 sm:col-span-3 bg-emerald-50/70 p-3.5 rounded-xl border border-emerald-200">
                   <div className="flex items-center justify-between">
-                    <label className="font-bold text-zinc-900 flex items-center gap-1.5">
-                      <Zap className="w-3.5 h-3.5 text-amber-600 fill-amber-600" />
-                      Lemon Squeezy / Güvenli Ödeme Bağlantısı Linki (URL) *
+                    <label className="font-bold text-zinc-900 flex items-center gap-1.5 text-xs">
+                      <Zap className="w-3.5 h-3.5 text-amber-500 fill-amber-500" />
+                      Lemon Squeezy Dinamik Ödeme Entegrasyonu (Otomatik & Canlı)
                     </label>
-                    <span className="text-[10px] text-amber-800 font-medium">Müşteri satın al dediğinde bu link açılır</span>
+                    <span className="text-[11px] text-emerald-800 font-bold bg-emerald-100 px-2.5 py-0.5 rounded-md flex items-center gap-1">
+                      <Check className="w-3 h-3 text-emerald-600" />
+                      Joker Variant (2059055) Aktif
+                    </span>
                   </div>
-                  <input
-                    type="url"
-                    value={paymentUrl}
-                    onChange={(e) => setPaymentUrl(e.target.value)}
-                    placeholder="https://deparstore.lemonsqueezy.com/buy/urun-kodu-veya-id"
-                    className="w-full px-3 py-2 bg-white border border-amber-300 rounded-xl text-xs font-mono text-zinc-900 focus:ring-1 focus:ring-amber-500 focus:outline-none"
-                  />
+                  <p className="text-[11px] text-zinc-600 font-normal leading-relaxed">
+                    Manuel link girmenize gerek yoktur. Aşağıya girdiğiniz güncel satış fiyatı (₺), müşteri &quot;Satın Al&quot; butonuna bastığında Lemon Squeezy API üzerinden kuruş cinsinden anlık olarak tahsil edilir.
+                  </p>
                 </div>
 
                 {/* Normal Price */}

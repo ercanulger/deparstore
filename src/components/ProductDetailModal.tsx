@@ -16,7 +16,9 @@ import {
   Check,
   User,
   Mail,
-  Phone
+  Phone,
+  Loader2,
+  AlertCircle
 } from 'lucide-react';
 import { Product, Order } from '../types';
 import { formatPrice, calculateDiscount, generateOrderNumber } from '../lib/utils';
@@ -24,6 +26,7 @@ import { useCart } from '../context/CartContext';
 import { useAuth } from '../context/AuthContext';
 import { doc, setDoc } from 'firebase/firestore';
 import { db } from '../lib/firebase';
+import { createLemonCheckout } from '../lib/lemonSqueezy';
 
 interface ProductDetailModalProps {
   product: Product | null;
@@ -47,7 +50,8 @@ export const ProductDetailModal: React.FC<ProductDetailModalProps> = ({
   const [selectedImageIndex, setSelectedImageIndex] = useState(0);
   const [quantity, setQuantity] = useState(1);
   const [isAdded, setIsAdded] = useState(false);
-  const [showQuickOrderForm, setShowQuickOrderForm] = useState(false);
+  const [isCheckoutLoading, setIsCheckoutLoading] = useState(false);
+  const [checkoutError, setCheckoutError] = useState<string | null>(null);
   const [customerName, setCustomerName] = useState(userProfile?.displayName || '');
   const [customerEmail, setCustomerEmail] = useState(userProfile?.email || user?.email || '');
   const [customerPhone, setCustomerPhone] = useState(userProfile?.phone || '');
@@ -60,6 +64,7 @@ export const ProductDetailModal: React.FC<ProductDetailModalProps> = ({
   const discountPercent =
     product.discountPercent || calculateDiscount(product.price, product.salePrice);
   const effectivePrice = product.salePrice ?? product.price;
+  const totalPrice = effectivePrice * quantity;
   const savings =
     product.salePrice && product.salePrice < product.price
       ? product.price - product.salePrice
@@ -74,13 +79,19 @@ export const ProductDetailModal: React.FC<ProductDetailModalProps> = ({
     setTimeout(() => setIsAdded(false), 2000);
   };
 
-  const createAndTrackOrder = async () => {
+  // Dynamic Lemon Squeezy API Checkout with Joker Variant & Custom Price
+  const handleLemonSqueezyCheckout = async () => {
+    if (isOutOfStock || isCheckoutLoading) return;
+    
+    setIsCheckoutLoading(true);
+    setCheckoutError(null);
+
     const orderNumber = generateOrderNumber();
     const newOrder: Order = {
       id: `ord_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`,
       orderNumber,
       userId: user?.uid || userProfile?.uid || 'guest_user',
-      userEmail: customerEmail || 'musteri@deparstore.com',
+      userEmail: customerEmail || user?.email || 'musteri@deparstore.me',
       items: [
         {
           id: product.id,
@@ -88,31 +99,30 @@ export const ProductDetailModal: React.FC<ProductDetailModalProps> = ({
           price: effectivePrice,
           quantity: quantity,
           image: images[0] || '',
-          paymentUrl: product.paymentUrl,
           specs: product.specs || [],
         },
       ],
-      subtotal: effectivePrice * quantity,
+      subtotal: totalPrice,
       shippingFee: 0,
       discountAmount: savings * quantity,
-      total: effectivePrice * quantity,
+      total: totalPrice,
       shippingAddress: {
         fullName: customerName || userProfile?.displayName || 'Müşteri',
         email: customerEmail || userProfile?.email || user?.email || '',
         phone: customerPhone || userProfile?.phone || '',
-        addressDetail: 'Dijital Teslimat / Lemon Squeezy',
+        addressDetail: 'Dijital Lisans / Lemon Squeezy',
         city: 'Dijital',
       },
       payment: {
-        cardHolder: customerName || 'Dijital Ödeme',
-        method: product.paymentUrl ? 'lemon_squeezy' : 'credit_card',
+        cardHolder: customerName || 'Lemon Squeezy Ödeme',
+        method: 'lemon_squeezy',
         paidAt: new Date().toISOString(),
-        paymentUrl: product.paymentUrl,
       },
       status: 'İnceleniyor',
       createdAt: new Date().toISOString(),
     };
 
+    // Save order record to Firestore
     try {
       await setDoc(doc(db, 'orders', newOrder.id), newOrder);
       localStorage.setItem('deparstore_active_order_id', newOrder.id);
@@ -121,24 +131,32 @@ export const ProductDetailModal: React.FC<ProductDetailModalProps> = ({
       localStorage.setItem('deparstore_active_order_id', newOrder.id);
     }
 
-    if (product.paymentUrl) {
-      window.open(product.paymentUrl, '_blank', 'noopener,noreferrer');
-    }
-
-    onClose();
     if (onOrderInitiated) {
       onOrderInitiated(newOrder);
     }
-  };
 
-  const handleLemonSqueezyCheckout = () => {
-    if (isOutOfStock) return;
-    createAndTrackOrder();
+    // Call dynamic backend API with current product price
+    const result = await createLemonCheckout({
+      productId: product.id,
+      title: product.title,
+      price: totalPrice,
+      customerEmail: customerEmail || user?.email,
+      customerName: customerName || userProfile?.displayName,
+      orderId: orderNumber,
+      redirectUrl: `https://deparstore.me/odeme-basarili?order_id=${encodeURIComponent(orderNumber)}`,
+    });
+
+    if (result.success && result.url) {
+      // Redirect customer to the dynamically generated Lemon Squeezy checkout URL
+      window.location.href = result.url;
+    } else {
+      setIsCheckoutLoading(false);
+      setCheckoutError(result.error || 'Ödeme bağlantısı oluşturulamadı.');
+    }
   };
 
   const handleWhatsAppOrder = () => {
-    createAndTrackOrder();
-    const text = `Merhaba DeparStore, "${product.title}" (${formatPrice(effectivePrice)}) ürününüzü satın almak ve onaylatmak istiyorum.`;
+    const text = `Merhaba DeparStore, "${product.title}" (${formatPrice(effectivePrice)}) ürününüzü satın almak ve bilgi almak istiyorum.`;
     const cleanPhone = whatsappNumber.replace(/\D/g, '');
     const waUrl = `https://wa.me/${cleanPhone}?text=${encodeURIComponent(text)}`;
     window.open(waUrl, '_blank', 'noopener,noreferrer');
@@ -330,15 +348,32 @@ export const ProductDetailModal: React.FC<ProductDetailModalProps> = ({
 
             {/* Bottom Actions: Lemon Squeezy, WhatsApp & Cart */}
             <div className="space-y-2.5 pt-4 border-t border-zinc-200">
+              {/* Error Message if Checkout Fails */}
+              {checkoutError && (
+                <div className="p-3 bg-rose-50 border border-rose-200 rounded-xl flex items-center gap-2 text-xs text-rose-700">
+                  <AlertCircle className="w-4 h-4 shrink-0 text-rose-600" />
+                  <span>{checkoutError}</span>
+                </div>
+              )}
+
               {/* Primary Lemon Squeezy Direct Buy Button */}
               <button
                 onClick={handleLemonSqueezyCheckout}
-                disabled={isOutOfStock}
-                className="w-full py-3 px-4 bg-[#121212] hover:bg-zinc-800 text-white font-bold text-xs sm:text-sm rounded-xl shadow-md transition flex items-center justify-center gap-2 cursor-pointer group active:scale-98"
+                disabled={isOutOfStock || isCheckoutLoading}
+                className="w-full py-3.5 px-4 bg-[#121212] hover:bg-zinc-800 disabled:opacity-60 text-white font-bold text-xs sm:text-sm rounded-xl shadow-md transition flex items-center justify-center gap-2 cursor-pointer group active:scale-98"
               >
-                <Zap className="w-4 h-4 text-amber-400 fill-amber-400" />
-                <span>Lemon Squeezy ile Güvenli Satın Al ({formatPrice(effectivePrice * quantity)})</span>
-                <ExternalLink className="w-3.5 h-3.5 text-zinc-400 group-hover:text-white" />
+                {isCheckoutLoading ? (
+                  <>
+                    <Loader2 className="w-4 h-4 text-amber-400 animate-spin" />
+                    <span>Lemon Squeezy Ödeme Sayfası Açılıyor...</span>
+                  </>
+                ) : (
+                  <>
+                    <Zap className="w-4 h-4 text-amber-400 fill-amber-400" />
+                    <span>Lemon Squeezy ile Güvenli Satın Al ({formatPrice(totalPrice)})</span>
+                    <ExternalLink className="w-3.5 h-3.5 text-zinc-400 group-hover:text-white" />
+                  </>
+                )}
               </button>
 
               {/* Secondary Actions Grid: WhatsApp & Sepete Ekle */}

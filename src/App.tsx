@@ -24,6 +24,8 @@ import { OrderStatusModal } from './components/OrderStatusModal';
 import { AuthModal } from './components/AuthModal';
 import { AdminPanel } from './components/AdminPanel';
 import { AdminLogin } from './components/AdminLogin';
+import { PaymentSuccessPage } from './components/PaymentSuccessPage';
+import { PaymentFailedPage } from './components/PaymentFailedPage';
 import { WhatsAppSupport } from './components/WhatsAppSupport';
 import { Footer } from './components/Footer';
 import { calculateDiscount } from './lib/utils';
@@ -33,14 +35,38 @@ function StoreApp() {
   const { user, userProfile } = useAuth();
   const { isCartOpen, setIsCartOpen } = useCart();
 
-  // Route state (Checks /admin, #/admin, ?admin in URL)
-  const checkIsAdminPath = () => {
-    if (typeof window === 'undefined') return false;
+  // Multi-route detection (/admin, /odeme-basarili, /odeme-basarisiz)
+  const getActiveRoute = (): 'store' | 'admin' | 'payment-success' | 'payment-failed' => {
+    if (typeof window === 'undefined') return 'store';
     const path = (window.location.pathname || '').toLowerCase();
     const hash = (window.location.hash || '').toLowerCase();
     const search = (window.location.search || '').toLowerCase();
 
-    return (
+    if (
+      path.includes('odeme-basarili') ||
+      path.includes('payment-success') ||
+      hash.includes('odeme-basarili') ||
+      hash.includes('payment-success') ||
+      search.includes('odeme-basarili') ||
+      search.includes('payment=success')
+    ) {
+      return 'payment-success';
+    }
+
+    if (
+      path.includes('odeme-basarisiz') ||
+      path.includes('payment-failed') ||
+      path.includes('cancel') ||
+      hash.includes('odeme-basarisiz') ||
+      hash.includes('payment-failed') ||
+      search.includes('odeme-basarisiz') ||
+      search.includes('payment=failed') ||
+      search.includes('payment=cancel')
+    ) {
+      return 'payment-failed';
+    }
+
+    if (
       path === '/admin' ||
       path.startsWith('/admin') ||
       path.includes('/admin') ||
@@ -48,10 +74,20 @@ function StoreApp() {
       hash.startsWith('#/admin') ||
       hash.includes('admin') ||
       search.includes('admin')
-    );
+    ) {
+      return 'admin';
+    }
+
+    return 'store';
   };
 
-  const [isAdminRoute, setIsAdminRoute] = useState<boolean>(checkIsAdminPath);
+  const [currentRoute, setCurrentRoute] = useState<'store' | 'admin' | 'payment-success' | 'payment-failed'>(getActiveRoute);
+  const [currentOrderIdParam, setCurrentOrderIdParam] = useState<string>(() => {
+    if (typeof window === 'undefined') return '';
+    const params = new URLSearchParams(window.location.search);
+    return params.get('order_id') || params.get('orderId') || params.get('id') || '';
+  });
+
   const [isAdminAuthenticated, setIsAdminAuthenticated] = useState<boolean>(() => {
     if (typeof window === 'undefined') return false;
     return (
@@ -60,17 +96,22 @@ function StoreApp() {
     );
   });
 
-  // Listen to browser URL changes (popstate, hashchange, plus lightweight polling for iframe safety)
+  // Listen to browser URL changes (popstate, hashchange, plus polling)
   useEffect(() => {
     const handleUrlChange = () => {
-      const isAdm = checkIsAdminPath();
-      setIsAdminRoute((prev) => (prev !== isAdm ? isAdm : prev));
+      const active = getActiveRoute();
+      setCurrentRoute((prev) => (prev !== active ? active : prev));
+
+      if (typeof window !== 'undefined') {
+        const params = new URLSearchParams(window.location.search);
+        const oId = params.get('order_id') || params.get('orderId') || params.get('id') || '';
+        if (oId) setCurrentOrderIdParam(oId);
+      }
     };
 
     window.addEventListener('popstate', handleUrlChange);
     window.addEventListener('hashchange', handleUrlChange);
     
-    // Check periodically for URL changes
     const interval = setInterval(handleUrlChange, 250);
 
     return () => {
@@ -130,44 +171,36 @@ function StoreApp() {
     }
   };
 
-  // Test connection & Subscribe to Firestore Products & Orders
+  // Test connection & Subscribe to Firestore Products, Orders, and Settings in Real-Time
   useEffect(() => {
     testConnection();
 
-    // 1. Listen to products collection
+    // 1. Real-time Listen to products collection
     const unsubProducts = onSnapshot(
       collection(db, 'products'),
       (snapshot) => {
         if (!snapshot.empty) {
           const loaded: Product[] = [];
-          let hasLegacyNonDigitalProduct = false;
-
           snapshot.forEach((docSnap) => {
             const data = docSnap.data() as Product;
-            // Check for legacy non-digital items (e.g., shoe, clothing)
-            const catLower = (data.category || '').toLowerCase();
-            if (
-              catLower.includes('ayakkabı') ||
-              catLower.includes('giyim') ||
-              catLower.includes('aksesuar') ||
-              catLower.includes('moda') ||
-              catLower.includes('sneaker')
-            ) {
-              hasLegacyNonDigitalProduct = true;
-            } else {
+            if (data && data.id && data.title) {
               loaded.push(data);
             }
           });
 
-          // If legacy physical products were in the database or loaded is empty, re-seed with pure digital catalog
-          if (hasLegacyNonDigitalProduct || loaded.length === 0) {
-            setProducts(INITIAL_PRODUCTS);
-            seedFirestoreDatabase();
-          } else {
+          if (loaded.length > 0) {
+            // Keep newest/updated products at top by default
+            loaded.sort((a, b) => {
+              const timeA = new Date(a.createdAt || 0).getTime();
+              const timeB = new Date(b.createdAt || 0).getTime();
+              return timeB - timeA;
+            });
             setProducts(loaded);
+          } else {
+            setProducts(INITIAL_PRODUCTS);
           }
         } else {
-          // If Firestore is empty, seed initial digital products
+          // If Firestore is completely empty on initial setup, seed initial digital products
           setProducts(INITIAL_PRODUCTS);
           seedFirestoreDatabase();
         }
@@ -180,18 +213,23 @@ function StoreApp() {
       }
     );
 
-    // 2. Listen to orders collection
+    // 2. Real-time Listen to orders collection
     const unsubOrders = onSnapshot(
       collection(db, 'orders'),
       (snapshot) => {
         if (!snapshot.empty) {
           const loadedOrders: Order[] = [];
           snapshot.forEach((docSnap) => {
-            loadedOrders.push(docSnap.data() as Order);
+            const data = docSnap.data() as Order;
+            if (data && data.id) {
+              loadedOrders.push(data);
+            }
           });
           // Sort newest first
-          loadedOrders.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+          loadedOrders.sort((a, b) => new Date(b.createdAt || 0).getTime() - new Date(a.createdAt || 0).getTime());
           setOrders(loadedOrders);
+        } else {
+          setOrders([]);
         }
       },
       (error) => {
@@ -199,9 +237,26 @@ function StoreApp() {
       }
     );
 
+    // 3. Real-time Listen to store settings (WhatsApp number, announcement)
+    const unsubSettings = onSnapshot(
+      doc(db, 'settings', 'general'),
+      (docSnap) => {
+        if (docSnap.exists()) {
+          const data = docSnap.data();
+          if (data && data.whatsappNumber) {
+            setStoreWhatsApp(data.whatsappNumber);
+          }
+        }
+      },
+      (error) => {
+        console.warn('Firestore settings listener note:', error);
+      }
+    );
+
     return () => {
       unsubProducts();
       unsubOrders();
+      unsubSettings();
     };
   }, []);
 
@@ -306,27 +361,83 @@ function StoreApp() {
     try {
       window.history.pushState({}, '', '/');
     } catch (_) {}
-    setIsAdminRoute(false);
+    setCurrentRoute('store');
   };
 
-  const handleAdminClose = () => {
+  const handleBackToStore = () => {
     try {
       window.history.pushState({}, '', '/');
     } catch (_) {}
-    setIsAdminRoute(false);
+    setCurrentRoute('store');
   };
 
   const handleDirectCheckout = (product: Product, quantity: number) => {
     setIsCheckoutOpen(true);
   };
 
+  // PAYMENT SUCCESS VIEW
+  if (currentRoute === 'payment-success') {
+    return (
+      <div className="min-h-screen bg-zinc-50 flex flex-col justify-between">
+        <Navbar
+          onOpenAuth={() => setIsAuthOpen(true)}
+          onOpenOrders={() => setIsOrderHistoryOpen(true)}
+          onSelectCategory={(slug) => {
+            handleBackToStore();
+            setFilters((prev) => ({ ...prev, category: slug }));
+          }}
+        />
+        <PaymentSuccessPage
+          orderId={currentOrderIdParam}
+          orders={orders}
+          onGoHome={handleBackToStore}
+          whatsappNumber={storeWhatsApp}
+        />
+        <Footer
+          categories={categoriesWithCounts}
+          onSelectCategory={(slug) => {
+            handleBackToStore();
+            setFilters((prev) => ({ ...prev, category: slug }));
+          }}
+        />
+      </div>
+    );
+  }
+
+  // PAYMENT FAILED VIEW
+  if (currentRoute === 'payment-failed') {
+    return (
+      <div className="min-h-screen bg-zinc-50 flex flex-col justify-between">
+        <Navbar
+          onOpenAuth={() => setIsAuthOpen(true)}
+          onOpenOrders={() => setIsOrderHistoryOpen(true)}
+          onSelectCategory={(slug) => {
+            handleBackToStore();
+            setFilters((prev) => ({ ...prev, category: slug }));
+          }}
+        />
+        <PaymentFailedPage
+          onGoHome={handleBackToStore}
+          whatsappNumber={storeWhatsApp}
+        />
+        <Footer
+          categories={categoriesWithCounts}
+          onSelectCategory={(slug) => {
+            handleBackToStore();
+            setFilters((prev) => ({ ...prev, category: slug }));
+          }}
+        />
+      </div>
+    );
+  }
+
   // ADMIN ROUTE VIEW
-  if (isAdminRoute) {
+  if (currentRoute === 'admin') {
     if (!isAdminAuthenticated) {
       return (
         <AdminLogin
           onLoginSuccess={() => setIsAdminAuthenticated(true)}
-          onBackToStore={handleAdminClose}
+          onBackToStore={handleBackToStore}
         />
       );
     }
@@ -336,7 +447,7 @@ function StoreApp() {
         products={products}
         orders={orders}
         onRefreshData={() => {}}
-        onCloseAdmin={handleAdminClose}
+        onCloseAdmin={handleBackToStore}
         onLogout={handleAdminLogout}
         onSeedDatabase={seedFirestoreDatabase}
         whatsappNumber={storeWhatsApp}

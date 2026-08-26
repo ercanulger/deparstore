@@ -33,3 +33,12 @@ export function generateOrderNumber(): string {
   const randomPart = Math.floor(100000 + Math.random() * 900000);
   return `ORD-${year}-${randomPart}`;
 }
+
+export function formatExternalUrl(url?: string): string {
+  if (!url) return '';
+  const trimmed = url.trim();
+  if (trimmed.startsWith('http://') || trimmed.startsWith('https://')) {
+    return trimmed;
+  }
+  return `https://${trimmed}`;
+}

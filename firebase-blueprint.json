@@ -17,7 +17,7 @@
     },
     "Product": {
       "title": "E-Commerce Product",
-      "description": "Catalog product with regular and discounted price, stock, specs, and images",
+      "description": "Catalog product with regular and discounted price, stock, specs, paymentUrl, and images",
       "type": "object",
       "properties": {
         "id": { "type": "string", "description": "Unique product ID" },
@@ -30,12 +30,27 @@
         "stock": { "type": "number", "description": "Available inventory stock quantity" },
         "images": { "type": "array", "description": "List of product image URLs" },
         "specs": { "type": "array", "description": "Technical specifications key-value pairs" },
+        "paymentUrl": { "type": "string", "description": "Direct checkout payment URL (e.g. Lemon Squeezy, Shopier)" },
+        "platform": { "type": "string", "description": "Compatible platform" },
+        "badge": { "type": "string", "description": "Highlight badge text" },
+        "deliveryTime": { "type": "string", "description": "Estimated delivery time text" },
         "rating": { "type": "number", "description": "Average rating from 1 to 5" },
         "reviewCount": { "type": "number", "description": "Number of customer reviews" },
         "createdAt": { "type": "string", "description": "Creation timestamp" },
         "updatedAt": { "type": "string", "description": "Last update timestamp" }
       },
       "required": ["title", "category", "price", "stock"]
+    },
+    "Settings": {
+      "title": "Store Settings",
+      "description": "Store configuration such as WhatsApp support number and Lemon Squeezy default URL",
+      "type": "object",
+      "properties": {
+        "whatsappNumber": { "type": "string", "description": "WhatsApp contact number" },
+        "welcomeMessage": { "type": "string", "description": "Store banner welcome text" },
+        "defaultLemonStore": { "type": "string", "description": "Default payment provider store URL" },
+        "updatedAt": { "type": "string", "description": "Last updated timestamp" }
+      }
     },
     "Order": {
       "title": "Customer Order",
@@ -54,9 +69,11 @@
         "payment": { "type": "object", "description": "Payment confirmation details" },
         "status": {
           "type": "string",
-          "enum": ["Sipariş Alındı", "Hazırlanıyor", "Kargoya Verildi", "Teslim Edildi", "İptal Edildi"],
+          "enum": ["İnceleniyor", "Başarılı", "Başarısız", "Sipariş Alındı", "Hazırlanıyor", "Teslim Edildi", "İptal Edildi"],
           "description": "Order fulfillment status"
         },
+        "digitalCode": { "type": "string", "description": "Digital delivery license code" },
+        "adminNote": { "type": "string", "description": "Admin message to the customer" },
         "createdAt": { "type": "string", "description": "Order timestamp" },
         "updatedAt": { "type": "string", "description": "Last update timestamp" }
       },
@@ -75,6 +92,10 @@
     "/orders/{orderId}": {
       "schema": { "$ref": "#/entities/Order" },
       "description": "Placed orders accessible to order owner and store administrators"
+    },
+    "/settings/{settingId}": {
+      "schema": { "$ref": "#/entities/Settings" },
+      "description": "Global store settings like WhatsApp and Lemon Squeezy integration details"
     }
   }
 }

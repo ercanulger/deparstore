@@ -9,6 +9,10 @@ import {
   ArrowRight,
   ArrowLeft,
   ShoppingBag,
+  Zap,
+  Loader2,
+  AlertCircle,
+  ExternalLink,
 } from 'lucide-react';
 import confetti from 'canvas-confetti';
 import { collection, addDoc, doc, setDoc } from 'firebase/firestore';
@@ -17,6 +21,7 @@ import { useAuth } from '../context/AuthContext';
 import { useCart } from '../context/CartContext';
 import { Order, OrderAddress, PaymentDetails } from '../types';
 import { formatPrice, generateOrderNumber } from '../lib/utils';
+import { createLemonCheckout } from '../lib/lemonSqueezy';
 
 interface CheckoutModalProps {
   isOpen: boolean;
@@ -42,6 +47,9 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
 
   const [step, setStep] = useState<'address' | 'payment' | 'success'>('address');
   const [submitting, setSubmitting] = useState(false);
+  const [isLemonLoading, setIsLemonLoading] = useState(false);
+  const [paymentMethodTab, setPaymentMethodTab] = useState<'lemon' | 'card'>('lemon');
+  const [checkoutError, setCheckoutError] = useState<string | null>(null);
   const [completedOrder, setCompletedOrder] = useState<Order | null>(null);
 
   // Address Form State
@@ -76,6 +84,69 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
       val = val.substring(0, 2) + '/' + val.substring(2, 4);
     }
     setExpiry(val);
+  };
+
+  const handleLemonSqueezyCheckout = async () => {
+    if (items.length === 0 || isLemonLoading) return;
+
+    setIsLemonLoading(true);
+    setCheckoutError(null);
+
+    const orderNumber = generateOrderNumber();
+    const newOrder: Order = {
+      id: `ord_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`,
+      orderNumber,
+      userId: user?.uid || userProfile?.uid || 'guest_user',
+      userEmail: address.email || 'musteri@deparstore.me',
+      items: items.map((item) => ({
+        id: item.product.id,
+        title: item.product.title,
+        price: item.product.salePrice ?? item.product.price,
+        quantity: item.quantity,
+        image: item.product.images?.[0] || '',
+        specs: item.product.specs || [],
+      })),
+      subtotal,
+      shippingFee,
+      discountAmount,
+      total,
+      shippingAddress: address,
+      payment: {
+        cardHolder: address.fullName || 'Lemon Squeezy Ödeme',
+        method: 'lemon_squeezy',
+        paidAt: new Date().toISOString(),
+      },
+      status: 'İnceleniyor',
+      createdAt: new Date().toISOString(),
+    };
+
+    try {
+      await setDoc(doc(db, 'orders', newOrder.id), newOrder);
+      localStorage.setItem('deparstore_active_order_id', newOrder.id);
+    } catch (err) {
+      console.warn('Firestore write warning for orders:', err);
+    }
+
+    const itemsSummary = items.map((i) => `${i.product.title} (x${i.quantity})`).join(', ');
+
+    const res = await createLemonCheckout({
+      productId: items[0]?.product.id || 'cart_checkout',
+      title: items.length === 1 ? items[0].product.title : `DeparStore Sepet (${items.length} Ürün)`,
+      price: total,
+      customerEmail: address.email,
+      customerName: address.fullName,
+      customerPhone: address.phone,
+      orderId: orderNumber,
+      redirectUrl: `https://deparstore.me/odeme-basarili?order_id=${encodeURIComponent(orderNumber)}`,
+    });
+
+    if (res.success && res.url) {
+      clearCart();
+      window.location.href = res.url;
+    } else {
+      setIsLemonLoading(false);
+      setCheckoutError(res.error || 'Lemon Squeezy ödeme bağlantısı oluşturulamadı.');
+    }
   };
 
   const handleCompleteOrder = async (e: React.FormEvent) => {
@@ -295,116 +366,211 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
 
           {/* STEP 2: PAYMENT */}
           {step === 'payment' && (
-            <form onSubmit={handleCompleteOrder} className="space-y-4">
-              
-              {/* Virtual Credit Card Mockup */}
-              <div className="p-5 rounded-xl bg-[#121212] text-white shadow-md space-y-4 border border-zinc-800">
-                <div className="flex justify-between items-center">
-                  <span className="text-xs font-semibold tracking-widest text-zinc-400">DEPAR PAY</span>
-                  <CreditCard className="w-5 h-5 text-zinc-300" />
-                </div>
-                <div className="text-base sm:text-lg font-mono tracking-widest font-bold">
-                  {cardNumber || '•••• •••• •••• ••••'}
-                </div>
-                <div className="flex justify-between items-end text-xs">
-                  <div>
-                    <div className="text-[10px] text-zinc-400 uppercase">Kart Sahibi</div>
-                    <div className="font-semibold uppercase tracking-wider">{cardHolder || 'AD SOYAD'}</div>
-                  </div>
-                  <div>
-                    <div className="text-[10px] text-zinc-400 uppercase">Son Kullanma</div>
-                    <div className="font-semibold font-mono">{expiry || 'MM/YY'}</div>
-                  </div>
-                </div>
-              </div>
-
-              {/* Card Inputs */}
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5 text-xs">
-                <div className="space-y-1 sm:col-span-2">
-                  <label className="font-semibold text-zinc-800">Kart Üzerindeki İsim *</label>
-                  <input
-                    type="text"
-                    required
-                    value={cardHolder}
-                    onChange={(e) => setCardHolder(e.target.value)}
-                    placeholder="AHMET YILMAZ"
-                    className="w-full px-3 py-2 bg-white border border-zinc-200 rounded-xl uppercase font-semibold text-xs focus:ring-1 focus:ring-zinc-900 focus:outline-none"
-                  />
-                </div>
-
-                <div className="space-y-1 sm:col-span-2">
-                  <label className="font-semibold text-zinc-800">Kart Numarası *</label>
-                  <input
-                    type="text"
-                    required
-                    maxLength={19}
-                    value={cardNumber}
-                    onChange={handleCardNumberChange}
-                    placeholder="4543 2198 7654 3210"
-                    className="w-full px-3 py-2 bg-white border border-zinc-200 rounded-xl font-mono text-xs focus:ring-1 focus:ring-zinc-900 focus:outline-none"
-                  />
-                </div>
-
-                <div className="space-y-1">
-                  <label className="font-semibold text-zinc-800">Son Kullanma Tarihi (AA/YY) *</label>
-                  <input
-                    type="text"
-                    required
-                    maxLength={5}
-                    value={expiry}
-                    onChange={handleExpiryChange}
-                    placeholder="12/28"
-                    className="w-full px-3 py-2 bg-white border border-zinc-200 rounded-xl font-mono text-xs focus:ring-1 focus:ring-zinc-900 focus:outline-none"
-                  />
-                </div>
-
-                <div className="space-y-1">
-                  <label className="font-semibold text-zinc-800">Güvenlik Kodu (CVV) *</label>
-                  <input
-                    type="password"
-                    required
-                    maxLength={4}
-                    value={cvv}
-                    onChange={(e) => setCvv(e.target.value.replace(/\D/g, ''))}
-                    placeholder="342"
-                    className="w-full px-3 py-2 bg-white border border-zinc-200 rounded-xl font-mono text-xs focus:ring-1 focus:ring-zinc-900 focus:outline-none"
-                  />
-                </div>
-              </div>
-
-              <label className="flex items-center gap-2 text-xs text-zinc-700 cursor-pointer pt-1">
-                <input
-                  type="checkbox"
-                  checked={use3DSecure}
-                  onChange={(e) => setUse3DSecure(e.target.checked)}
-                  className="rounded text-zinc-900 focus:ring-zinc-900 w-4 h-4"
-                />
-                <span className="font-medium">3D Secure ile Güvenli Doğrulama Yap</span>
-              </label>
-
-              {/* Action Buttons */}
-              <div className="flex items-center justify-between pt-3 border-t border-zinc-100">
+            <div className="space-y-4">
+              {/* Payment Method Selector */}
+              <div className="grid grid-cols-2 gap-2 p-1 bg-zinc-100 rounded-xl">
                 <button
                   type="button"
-                  onClick={() => setStep('address')}
-                  className="px-3 py-2 text-xs font-semibold text-zinc-600 hover:text-zinc-900 flex items-center gap-1.5 cursor-pointer"
+                  onClick={() => setPaymentMethodTab('lemon')}
+                  className={`py-2 px-3 rounded-lg text-xs font-semibold flex items-center justify-center gap-1.5 transition cursor-pointer ${
+                    paymentMethodTab === 'lemon'
+                      ? 'bg-white text-zinc-950 shadow-xs border border-zinc-200'
+                      : 'text-zinc-600 hover:text-zinc-900'
+                  }`}
                 >
-                  <ArrowLeft className="w-3.5 h-3.5" />
-                  <span>Adres Bilgilerine Dön</span>
+                  <Zap className="w-3.5 h-3.5 text-amber-500 fill-amber-500" />
+                  <span>Lemon Squeezy (Önerilen)</span>
                 </button>
 
                 <button
-                  type="submit"
-                  disabled={submitting}
-                  className="py-2.5 px-5 bg-[#121212] hover:bg-zinc-800 text-white font-semibold text-xs rounded-xl transition shadow-xs flex items-center gap-2 cursor-pointer disabled:opacity-50"
+                  type="button"
+                  onClick={() => setPaymentMethodTab('card')}
+                  className={`py-2 px-3 rounded-lg text-xs font-semibold flex items-center justify-center gap-1.5 transition cursor-pointer ${
+                    paymentMethodTab === 'card'
+                      ? 'bg-white text-zinc-950 shadow-xs border border-zinc-200'
+                      : 'text-zinc-600 hover:text-zinc-900'
+                  }`}
                 >
-                  <Lock className="w-3.5 h-3.5" />
-                  <span>
-                    {submitting ? 'Sipariş Kaydediliyor...' : `Siparişi Tamamla (${formatPrice(total)})`}
-                  </span>
+                  <CreditCard className="w-3.5 h-3.5 text-zinc-500" />
+                  <span>Manuel Kart Girişi</span>
                 </button>
               </div>
-            </form>
+
+              {checkoutError && (
+                <div className="p-3 bg-rose-50 border border-rose-200 rounded-xl flex items-center gap-2 text-xs text-rose-700">
+                  <AlertCircle className="w-4 h-4 shrink-0 text-rose-600" />
+                  <span>{checkoutError}</span>
+                </div>
+              )}
+
+              {/* Lemon Squeezy Direct Mode */}
+              {paymentMethodTab === 'lemon' && (
+                <div className="space-y-4 py-2">
+                  <div className="p-4 rounded-xl bg-zinc-900 text-white space-y-3">
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-2">
+                        <Zap className="w-4 h-4 text-amber-400 fill-amber-400" />
+                        <span className="font-bold text-xs sm:text-sm">Lemon Squeezy Güvenli Ödeme</span>
+                      </div>
+                      <span className="text-[11px] bg-emerald-950/80 text-emerald-300 font-semibold px-2 py-0.5 rounded-md border border-emerald-800">
+                        256-Bit SSL
+                      </span>
+                    </div>
+                    <p className="text-xs text-zinc-300 leading-relaxed">
+                      Kredi Kartı, Banka Kartı, Apple Pay veya Google Pay ile 3D Secure güvenliğinde anında ödeme yapın. Ödeme sonrasında dijital ürün kodlarınız hemen teslim edilir.
+                    </p>
+                    <div className="pt-2 border-t border-zinc-800 flex justify-between items-center text-xs">
+                      <span className="text-zinc-400">Sepet Tutarı:</span>
+                      <span className="text-base font-black text-white">{formatPrice(total)}</span>
+                    </div>
+                  </div>
+
+                  <div className="flex items-center justify-between pt-2">
+                    <button
+                      type="button"
+                      onClick={() => setStep('address')}
+                      className="px-3 py-2 text-xs font-semibold text-zinc-600 hover:text-zinc-900 flex items-center gap-1.5 cursor-pointer"
+                    >
+                      <ArrowLeft className="w-3.5 h-3.5" />
+                      <span>Adrese Dön</span>
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={handleLemonSqueezyCheckout}
+                      disabled={isLemonLoading}
+                      className="py-3 px-5 bg-[#121212] hover:bg-zinc-800 text-white font-bold text-xs sm:text-sm rounded-xl transition shadow-md flex items-center gap-2 cursor-pointer disabled:opacity-60"
+                    >
+                      {isLemonLoading ? (
+                        <>
+                          <Loader2 className="w-4 h-4 text-amber-400 animate-spin" />
+                          <span>Ödeme Sayfası Hazırlanıyor...</span>
+                        </>
+                      ) : (
+                        <>
+                          <Zap className="w-4 h-4 text-amber-400 fill-amber-400" />
+                          <span>Lemon Squeezy ile Güvenli Öde ({formatPrice(total)})</span>
+                          <ExternalLink className="w-3.5 h-3.5 text-zinc-400" />
+                        </>
+                      )}
+                    </button>
+                  </div>
+                </div>
+              )}
+
+              {/* Manual Card Mode */}
+              {paymentMethodTab === 'card' && (
+                <form onSubmit={handleCompleteOrder} className="space-y-4">
+                  {/* Virtual Credit Card Mockup */}
+                  <div className="p-5 rounded-xl bg-[#121212] text-white shadow-md space-y-4 border border-zinc-800">
+                    <div className="flex justify-between items-center">
+                      <span className="text-xs font-semibold tracking-widest text-zinc-400">DEPAR PAY</span>
+                      <CreditCard className="w-5 h-5 text-zinc-300" />
+                    </div>
+                    <div className="text-base sm:text-lg font-mono tracking-widest font-bold">
+                      {cardNumber || '•••• •••• •••• ••••'}
+                    </div>
+                    <div className="flex justify-between items-end text-xs">
+                      <div>
+                        <div className="text-[10px] text-zinc-400 uppercase">Kart Sahibi</div>
+                        <div className="font-semibold uppercase tracking-wider">{cardHolder || 'AD SOYAD'}</div>
+                      </div>
+                      <div>
+                        <div className="text-[10px] text-zinc-400 uppercase">Son Kullanma</div>
+                        <div className="font-semibold font-mono">{expiry || 'MM/YY'}</div>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Card Inputs */}
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5 text-xs">
+                    <div className="space-y-1 sm:col-span-2">
+                      <label className="font-semibold text-zinc-800">Kart Üzerindeki İsim *</label>
+                      <input
+                        type="text"
+                        required
+                        value={cardHolder}
+                        onChange={(e) => setCardHolder(e.target.value)}
+                        placeholder="AHMET YILMAZ"
+                        className="w-full px-3 py-2 bg-white border border-zinc-200 rounded-xl uppercase font-semibold text-xs focus:ring-1 focus:ring-zinc-900 focus:outline-none"
+                      />
+                    </div>
+
+                    <div className="space-y-1 sm:col-span-2">
+                      <label className="font-semibold text-zinc-800">Kart Numarası *</label>
+                      <input
+                        type="text"
+                        required
+                        maxLength={19}
+                        value={cardNumber}
+                        onChange={handleCardNumberChange}
+                        placeholder="4543 2198 7654 3210"
+                        className="w-full px-3 py-2 bg-white border border-zinc-200 rounded-xl font-mono text-xs focus:ring-1 focus:ring-zinc-900 focus:outline-none"
+                      />
+                    </div>
+
+                    <div className="space-y-1">
+                      <label className="font-semibold text-zinc-800">Son Kullanma Tarihi (AA/YY) *</label>
+                      <input
+                        type="text"
+                        required
+                        maxLength={5}
+                        value={expiry}
+                        onChange={handleExpiryChange}
+                        placeholder="12/28"
+                        className="w-full px-3 py-2 bg-white border border-zinc-200 rounded-xl font-mono text-xs focus:ring-1 focus:ring-zinc-900 focus:outline-none"
+                      />
+                    </div>
+
+                    <div className="space-y-1">
+                      <label className="font-semibold text-zinc-800">Güvenlik Kodu (CVV) *</label>
+                      <input
+                        type="password"
+                        required
+                        maxLength={4}
+                        value={cvv}
+                        onChange={(e) => setCvv(e.target.value.replace(/\D/g, ''))}
+                        placeholder="342"
+                        className="w-full px-3 py-2 bg-white border border-zinc-200 rounded-xl font-mono text-xs focus:ring-1 focus:ring-zinc-900 focus:outline-none"
+                      />
+                    </div>
+                  </div>
+
+                  <label className="flex items-center gap-2 text-xs text-zinc-700 cursor-pointer pt-1">
+                    <input
+                      type="checkbox"
+                      checked={use3DSecure}
+                      onChange={(e) => setUse3DSecure(e.target.checked)}
+                      className="rounded text-zinc-900 focus:ring-zinc-900 w-4 h-4"
+                    />
+                    <span className="font-medium">3D Secure ile Güvenli Doğrulama Yap</span>
+                  </label>
+
+                  {/* Action Buttons */}
+                  <div className="flex items-center justify-between pt-3 border-t border-zinc-100">
+                    <button
+                      type="button"
+                      onClick={() => setStep('address')}
+                      className="px-3 py-2 text-xs font-semibold text-zinc-600 hover:text-zinc-900 flex items-center gap-1.5 cursor-pointer"
+                    >
+                      <ArrowLeft className="w-3.5 h-3.5" />
+                      <span>Adres Bilgilerine Dön</span>
+                    </button>
+
+                    <button
+                      type="submit"
+                      disabled={submitting}
+                      className="py-2.5 px-5 bg-[#121212] hover:bg-zinc-800 text-white font-semibold text-xs rounded-xl transition shadow-xs flex items-center gap-2 cursor-pointer disabled:opacity-50"
+                    >
+                      <Lock className="w-3.5 h-3.5" />
+                      <span>
+                        {submitting ? 'Sipariş Kaydediliyor...' : `Siparişi Tamamla (${formatPrice(total)})`}
+                      </span>
+                    </button>
+                  </div>
+                </form>
+              )}
+            </div>
           )}
 
           {/* STEP 3: SUCCESS CONFIRMATION */}
