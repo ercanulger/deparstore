@@ -8,7 +8,14 @@ import { createServer as createViteServer } from "vite";
 dotenv.config({ path: ".env.local" });
 dotenv.config();
 
-// Default Lemon Squeezy Credentials
+// Lemon Squeezy credentials.
+// SECURITY: This key was pasted into a chat/log and shipped in source before -
+// it must be treated as already leaked. Rotate it in the Lemon Squeezy
+// dashboard (Settings -> API) and set the NEW key only via the
+// LEMON_SQUEEZY_API_KEY environment variable on the hosting platform - never
+// commit it to source again. The hardcoded value below is kept only as a
+// temporary fallback so the store keeps working while you migrate; remove it
+// once the env var is confirmed to be set in production.
 const DEFAULT_LEMON_API_KEY =
   "eyJ0eXAiOiJKV1QiLCJhbGciOiJSUzI1NiJ9.eyJhdWQiOiI5NGQ1OWNlZi1kYmI4LTRlYTUtYjE3OC1kMjU0MGZjZDY5MTkiLCJqdGkiOiJmM2I5OGRjNTY2N2M1NmQ0Y2I0MzA1YWFkMzY1ZmM5OTU2NjYzNGU1NTNlYjc5OThiZGI3NjY2M2M3NzExMTUzMDkxOGI3ZDkwMDA2ZjA3MyIsImlhdCI6MTc4NzcxMDY1MC4zMTQwMTcsIm5iZiI6MTc4NzcxMDY1MC4zMTQwMiwiZXhwIjoxODAzNjAwMDAwLjAyNTgzMiwic3ViIjoiNzgzOTcyOSIsInNjb3BlcyI6W119.Xtz0K3bO5qtEijcLJgTqJ28E4Ka4GC7GOiJPc6a42ia9xyK0QIdRLGiCag6bgq-vn7HOvTltuxl8I2ycGFCvl7n-gVHGbfK03-1WSHZmFwUdgfaf1IxUKfK718ZqQhptdizqXFdS7Bm7PovWREnV9WTV_js-QUomGL_bKgGd-lLmCyfQ9YagGDzKvqb04Zzd3jxtt2ZXJIAwPhwRT1BS88qsOGKoEt_2zPpLJcUJGbIyWDUk2l1kooCuhMrZ9ZnW1QYdOgM9HqelBL1XOvn04s28KUU3bLEIqolDwrGRAaafIDOH4bsdjRoOacOE97zEOJjQGCYXi4ZOaoinH_j-gF4KsrSFQ7L6pShmcXVCjQVuOzqO2ADjz210Ctubrc_VxoAceWBvdQn1_Oz06H1eHaYvcRgcap5snTXdaAt__Ywr9hawYcRged6Cu542Tp-lhQ0U5XR9M7zK4wUvG_gmCgOXHpPIpV_iyKVsFVIlpWNKe2kz70XNMJWnAvmikMzxghcAijehpSGSdsSMV05bjyzl_OrxE2cjGwc7IvVb23RG1v7DmVnLE8GFT5MGnFz5VBHgm29zTcOmf8g0uteEJE5sT3FwiPsyirOstyI0XnAj07W7kGOjfc_UpDS7aNmpKVGVVnHeql3R86Pie7ceecfbNcH9mMESCxMBp_i-olo";
 const DEFAULT_STORE_ID = "460280";
@@ -16,7 +23,7 @@ const DEFAULT_VARIANT_ID = "2059055";
 
 async function startServer() {
   const app = express();
-  const PORT = 3000;
+  const PORT = process.env.PORT ? Number(process.env.PORT) : 3000;
 
   // Middleware for capturing raw body for webhook verification
   app.use(
@@ -79,7 +86,7 @@ async function startServer() {
         redirectUrl ||
         `https://deparstore.me/odeme-basarili?order_id=${encodeURIComponent(formattedOrderId)}`;
 
-      // Build custom data safely without undefined/null fields
+      // Build custom data safely without undefined/null fields (mirrors api/checkout.ts)
       const customData: Record<string, string> = {
         order_id: String(formattedOrderId),
         product_id: String(productId || ""),
@@ -115,14 +122,7 @@ async function startServer() {
               description: `DeparStore Sipariş No: ${formattedOrderId}`,
               redirect_url: successRedirectUrl,
             },
-            checkout_data: {
-              email: customerEmail && String(customerEmail).trim() ? String(customerEmail).trim() : undefined,
-              name: customerName && String(customerName).trim() ? String(customerName).trim() : undefined,
-              custom: {
-                order_id: String(formattedOrderId),
-                product_id: String(productId || ""),
-              },
-            },
+            checkout_data: checkoutDataObj,
             checkout_options: {
               embed: false,
               media: true,
