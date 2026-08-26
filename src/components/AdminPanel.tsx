@@ -287,6 +287,49 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
     }
   };
 
+  // Tek bir siparişi kalıcı olarak sil (Firestore güvenlik kuralları
+  // gereği bu işlem yalnızca admin oturumuyla mümkündür).
+  const handleDeleteOrder = async (orderId: string) => {
+    if (!window.confirm('Bu siparişi kalıcı olarak silmek istediğinize emin misiniz? Bu işlem geri alınamaz.')) return;
+    try {
+      await deleteDoc(doc(db, 'orders', orderId));
+      onRefreshData();
+    } catch (err) {
+      console.warn('Delete order warning:', err);
+      window.alert('Sipariş silinirken bir hata oluştu. Lütfen tekrar deneyin.');
+    }
+  };
+
+  const [isClearingOrders, setIsClearingOrders] = useState(false);
+
+  // Sipariş geçmişindeki TÜM kayıtları kalıcı olarak siler. Eski hesaplarda/
+  // testlerde biriken sipariş kayıtlarını komple temizlemek için kullanılır.
+  // Yalnızca admin oturumuyla çalışır (bkz. firestore.rules: delete -> isAdmin()).
+  const handleDeleteAllOrders = async () => {
+    if (orders.length === 0) return;
+    const confirmText = window.prompt(
+      `Bu işlem TÜM sipariş geçmişini (${orders.length} sipariş) kalıcı olarak silecek ve geri alınamaz.\n\nOnaylamak için aşağıya SİL yazın:`
+    );
+    if (confirmText !== 'SİL') return;
+
+    setIsClearingOrders(true);
+    try {
+      const results = await Promise.allSettled(
+        orders.map((ord) => deleteDoc(doc(db, 'orders', ord.id)))
+      );
+      const failed = results.filter((r) => r.status === 'rejected').length;
+      onRefreshData();
+      if (failed > 0) {
+        window.alert(`${orders.length - failed} sipariş silindi, ${failed} sipariş silinemedi.`);
+      }
+    } catch (err) {
+      console.warn('Bulk delete orders warning:', err);
+      window.alert('Siparişler silinirken bir hata oluştu.');
+    } finally {
+      setIsClearingOrders(false);
+    }
+  };
+
   const [editingOrderDetails, setEditingOrderDetails] = useState<{
     [orderId: string]: { digitalCode: string; adminNote: string; isSaved?: boolean };
   }>({});
@@ -1116,6 +1159,16 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
                   <span className="w-2 h-2 rounded-full bg-rose-500" />
                   Başarısız ({orders.filter((o) => o.status === 'Başarısız' || o.status === 'İptal Edildi').length})
                 </button>
+
+                <button
+                  onClick={handleDeleteAllOrders}
+                  disabled={orders.length === 0 || isClearingOrders}
+                  className="ml-1 px-3 py-1.5 rounded-xl font-semibold transition cursor-pointer border bg-white text-rose-700 border-rose-300 hover:bg-rose-50 flex items-center gap-1.5 disabled:opacity-40 disabled:cursor-not-allowed"
+                  title="Tüm sipariş geçmişini kalıcı olarak sil"
+                >
+                  <Trash2 className="w-3.5 h-3.5" />
+                  <span>{isClearingOrders ? 'Siliniyor...' : 'Sipariş Geçmişini Temizle'}</span>
+                </button>
               </div>
             </div>
 
@@ -1252,6 +1305,15 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
                           }`}
                         >
                           <span>Teslim Edildi</span>
+                        </button>
+
+                        <button
+                          onClick={() => handleDeleteOrder(ord.id)}
+                          className="ml-auto px-3 py-1.5 rounded-lg text-xs font-bold transition flex items-center gap-1.5 cursor-pointer shadow-2xs bg-white hover:bg-rose-50 text-rose-700 border border-rose-300"
+                          title="Bu siparişi kalıcı olarak sil"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                          <span>Sil</span>
                         </button>
                       </div>
 
