@@ -2,6 +2,71 @@
  * Lemon Squeezy Dynamic Checkout Client Helper
  */
 
+const PENDING_ORDERS_KEY = 'deparstore_pending_orders';
+const PENDING_ORDER_MAX_AGE_MS = 24 * 60 * 60 * 1000; // 24 saat sonra otomatik temizlenir
+
+/**
+ * ÖNEMLİ: Bir sipariş, kullanıcı ödeme adımına yönlendirilmeden önce
+ * ASLA Firestore'a yazılmamalıdır. Aksi halde ödeme sayfasından geri
+ * dönülmesi / vazgeçilmesi durumunda "hayalet" (ödenmemiş) siparişler
+ * sipariş geçmişinde görünür. Bunun yerine sipariş taslağı burada,
+ * yalnızca tarayıcının yerel deposunda (localStorage) tutulur ve kullanıcı
+ * Lemon Squeezy'den GERÇEKTEN başarılı ödeme sonrası yönlendirildiğinde
+ * (bkz. App.tsx -> odeme-basarili rotası) Firestore'a yazılır.
+ */
+function readPendingOrders(): Record<string, { order: any; savedAt: number }> {
+  if (typeof window === 'undefined') return {};
+  try {
+    const raw = window.localStorage.getItem(PENDING_ORDERS_KEY);
+    if (!raw) return {};
+    const parsed = JSON.parse(raw);
+    return parsed && typeof parsed === 'object' ? parsed : {};
+  } catch {
+    return {};
+  }
+}
+
+function writePendingOrders(data: Record<string, { order: any; savedAt: number }>) {
+  if (typeof window === 'undefined') return;
+  try {
+    window.localStorage.setItem(PENDING_ORDERS_KEY, JSON.stringify(data));
+  } catch {
+    // localStorage dolu veya erişilemiyor olabilir - sessizce geç
+  }
+}
+
+/** Ödeme adımına gitmeden önce sipariş taslağını yalnızca yerelde sakla. */
+export function savePendingOrder(orderNumber: string, order: any): void {
+  if (!orderNumber) return;
+  const data = readPendingOrders();
+  data[orderNumber] = { order, savedAt: Date.now() };
+  writePendingOrders(data);
+}
+
+/** Gerçek ödeme sonrası (odeme-basarili sayfası) bekleyen siparişi getirir. */
+export function getPendingOrder(orderNumber: string): any | null {
+  if (!orderNumber) return null;
+  const data = readPendingOrders();
+  const entry = data[orderNumber];
+  if (!entry) return null;
+  if (Date.now() - entry.savedAt > PENDING_ORDER_MAX_AGE_MS) {
+    delete data[orderNumber];
+    writePendingOrders(data);
+    return null;
+  }
+  return entry.order;
+}
+
+/** Sipariş Firestore'a yazıldıktan (veya vazgeçildikten) sonra taslağı temizler. */
+export function clearPendingOrder(orderNumber: string): void {
+  if (!orderNumber) return;
+  const data = readPendingOrders();
+  if (data[orderNumber]) {
+    delete data[orderNumber];
+    writePendingOrders(data);
+  }
+}
+
 export interface CreateCheckoutParams {
   productId: string;
   title: string;
