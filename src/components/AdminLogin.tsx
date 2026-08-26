@@ -18,11 +18,11 @@ export const AdminLogin: React.FC<AdminLoginProps> = ({ onLoginSuccess, onBackTo
     setErrorMsg(null);
     setLoading(true);
 
-    const cleanUsername = username.trim();
+    const cleanUsername = username.trim().toLowerCase();
     const cleanPassword = password.trim();
 
     setTimeout(() => {
-      if (cleanUsername === 'ercanulger' && cleanPassword === '7207') {
+      if ((cleanUsername === 'ercan' || cleanUsername === 'ercanulger') && cleanPassword === '7207') {
         sessionStorage.setItem('deparstore_admin_auth', 'true');
         localStorage.setItem('deparstore_admin_auth', 'true');
         onLoginSuccess();
@@ -30,7 +30,7 @@ export const AdminLogin: React.FC<AdminLoginProps> = ({ onLoginSuccess, onBackTo
         setErrorMsg('Geçersiz kullanıcı adı veya şifre girdiniz.');
       }
       setLoading(false);
-    }, 400);
+    }, 300);
   };
 
   return (

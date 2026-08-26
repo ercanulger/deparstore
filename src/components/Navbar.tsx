@@ -9,9 +9,11 @@ import {
   Menu,
   X,
   Zap,
+  Clock,
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { useCart } from '../context/CartContext';
+import { Order } from '../types';
 
 interface NavbarProps {
   onOpenAuth: () => void;
@@ -20,6 +22,8 @@ interface NavbarProps {
   currentCategory: string;
   searchQuery: string;
   onSearchChange: (query: string) => void;
+  activePendingOrder?: Order | null;
+  onOpenOrderStatus?: () => void;
 }
 
 export const Navbar: React.FC<NavbarProps> = ({
@@ -29,6 +33,8 @@ export const Navbar: React.FC<NavbarProps> = ({
   currentCategory,
   searchQuery,
   onSearchChange,
+  activePendingOrder,
+  onOpenOrderStatus,
 }) => {
   const { userProfile, signOut } = useAuth();
   const { itemCount, setIsCartOpen } = useCart();
@@ -100,6 +106,19 @@ export const Navbar: React.FC<NavbarProps> = ({
           {/* Right Action Icons */}
           <div className="flex items-center gap-2 sm:gap-3">
             
+            {/* Active Pending Order Button (if any) */}
+            {activePendingOrder && onOpenOrderStatus && (
+              <button
+                onClick={onOpenOrderStatus}
+                className="px-3 py-2 bg-amber-500 hover:bg-amber-400 text-black font-bold text-xs rounded-xl flex items-center gap-1.5 shadow-xs transition animate-pulse cursor-pointer border border-amber-600"
+                title="İncelenen siparişinizi görüntüleyin"
+              >
+                <Clock className="w-3.5 h-3.5" />
+                <span className="hidden sm:inline">Siparişiniz İnceleniyor</span>
+                <span className="sm:hidden">İnceleniyor</span>
+              </button>
+            )}
+
             {/* Shopping Cart Button */}
             <button
               onClick={() => setIsCartOpen(true)}

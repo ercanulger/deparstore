@@ -29,7 +29,9 @@ import {
   Settings,
   Globe,
   Lock,
-  LogOut
+  LogOut,
+  X,
+  Clock
 } from 'lucide-react';
 import { doc, setDoc, deleteDoc, updateDoc } from 'firebase/firestore';
 import { db, uploadProductImage } from '../lib/firebase';
@@ -256,6 +258,38 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
     }
   };
 
+  // Update digital license code and admin note for an order
+  const handleSaveOrderDigitalDetails = async (
+    orderId: string,
+    digitalCode: string,
+    adminNote: string,
+    newStatus?: OrderStatus
+  ) => {
+    try {
+      const orderRef = doc(db, 'orders', orderId);
+      const payload: any = {
+        digitalCode: digitalCode.trim(),
+        adminNote: adminNote.trim(),
+        updatedAt: new Date().toISOString(),
+      };
+      if (newStatus) {
+        payload.status = newStatus;
+      }
+      await updateDoc(orderRef, payload);
+      onRefreshData();
+    } catch (err) {
+      console.warn('Save order digital details warning:', err);
+    }
+  };
+
+  const [editingOrderDetails, setEditingOrderDetails] = useState<{
+    [orderId: string]: { digitalCode: string; adminNote: string; isSaved?: boolean };
+  }>({});
+
+  const pendingOrdersCount = orders.filter(
+    (o) => o.status === 'İnceleniyor' || o.status === 'Sipariş Alındı'
+  ).length;
+
   const handleSaveSettings = () => {
     if (onUpdateWhatsApp) {
       onUpdateWhatsApp(storeWhatsApp);
@@ -378,7 +412,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
 
           <button
             onClick={() => setActiveTab('orders')}
-            className={`px-3.5 py-2 rounded-lg text-xs font-semibold transition cursor-pointer flex items-center gap-2 ${
+            className={`px-3.5 py-2 rounded-lg text-xs font-semibold transition cursor-pointer flex items-center gap-2 relative ${
               activeTab === 'orders'
                 ? 'bg-[#121212] text-white shadow-xs'
                 : 'text-zinc-600 hover:bg-zinc-100 hover:text-zinc-900'
@@ -386,6 +420,11 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
           >
             <ShoppingBag className="w-3.5 h-3.5" />
             <span>Sipariş Yönetimi ({orders.length})</span>
+            {pendingOrdersCount > 0 && (
+              <span className="px-1.5 py-0.2 text-[10px] font-extrabold bg-amber-500 text-black rounded-full animate-pulse">
+                {pendingOrdersCount} Yeni
+              </span>
+            )}
           </button>
 
           <button
@@ -1000,110 +1039,297 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
 
         {/* TAB 4: ORDERS MANAGEMENT */}
         {activeTab === 'orders' && (
-          <div className="bg-white rounded-2xl border border-zinc-200/80 shadow-xs overflow-hidden space-y-4 p-6">
-            <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
+          <div className="bg-white rounded-2xl border border-zinc-200/80 shadow-xs overflow-hidden space-y-6 p-6">
+            <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-4 border-b border-zinc-100 pb-4">
               <div>
-                <h2 className="text-base font-bold text-zinc-900">Müşteri Siparişleri ve Lisans Teslimatları</h2>
+                <h2 className="text-base font-bold text-zinc-900 flex items-center gap-2">
+                  <ShoppingBag className="w-4 h-4 text-zinc-900" />
+                  Müşteri Siparişleri ve Onay Takibi
+                </h2>
                 <p className="text-xs text-zinc-500">
-                  Gelen dijital siparişlerin durumlarını güncelleyin ve müşteri bilgilerine ulaşın.
+                  Müşterinin satın alım taleplerini inceleyin; tek tıkla <strong>Başarılı</strong> veya <strong>Başarısız</strong> olarak işaretleyin, lisans kodlarını müşteriye anında iletin.
                 </p>
               </div>
 
-              {/* Status Filter */}
-              <div className="flex items-center gap-2 text-xs">
-                <span className="text-zinc-500 font-medium">Filtre:</span>
-                <select
-                  value={orderFilterStatus}
-                  onChange={(e) => setOrderFilterStatus(e.target.value)}
-                  className="px-3 py-1.5 bg-zinc-50 border border-zinc-200 rounded-xl font-medium cursor-pointer focus:ring-1 focus:ring-zinc-900 focus:outline-none"
+              {/* Status Filter Chips */}
+              <div className="flex flex-wrap items-center gap-1.5 text-xs">
+                <button
+                  onClick={() => setOrderFilterStatus('all')}
+                  className={`px-3 py-1.5 rounded-xl font-semibold transition cursor-pointer border ${
+                    orderFilterStatus === 'all'
+                      ? 'bg-[#121212] text-white border-black'
+                      : 'bg-zinc-100 text-zinc-700 border-zinc-200 hover:bg-zinc-200'
+                  }`}
                 >
-                  <option value="all">Tüm Durumlar ({orders.length})</option>
-                  <option value="Sipariş Alındı">Sipariş Alındı</option>
-                  <option value="Hazırlanıyor">Hazırlanıyor</option>
-                  <option value="Teslim Edildi">Teslim Edildi</option>
-                  <option value="İptal Edildi">İptal Edildi</option>
-                </select>
+                  Tümü ({orders.length})
+                </button>
+                <button
+                  onClick={() => setOrderFilterStatus('İnceleniyor')}
+                  className={`px-3 py-1.5 rounded-xl font-semibold transition cursor-pointer border flex items-center gap-1 ${
+                    orderFilterStatus === 'İnceleniyor'
+                      ? 'bg-amber-500 text-black border-amber-600 font-bold'
+                      : 'bg-amber-50 text-amber-900 border-amber-200 hover:bg-amber-100'
+                  }`}
+                >
+                  <span className="w-2 h-2 rounded-full bg-amber-500" />
+                  İnceleniyor ({orders.filter((o) => o.status === 'İnceleniyor' || o.status === 'Sipariş Alındı').length})
+                </button>
+                <button
+                  onClick={() => setOrderFilterStatus('Başarılı')}
+                  className={`px-3 py-1.5 rounded-xl font-semibold transition cursor-pointer border flex items-center gap-1 ${
+                    orderFilterStatus === 'Başarılı'
+                      ? 'bg-emerald-600 text-white border-emerald-700'
+                      : 'bg-emerald-50 text-emerald-900 border-emerald-200 hover:bg-emerald-100'
+                  }`}
+                >
+                  <span className="w-2 h-2 rounded-full bg-emerald-500" />
+                  Başarılı ({orders.filter((o) => o.status === 'Başarılı').length})
+                </button>
+                <button
+                  onClick={() => setOrderFilterStatus('Başarısız')}
+                  className={`px-3 py-1.5 rounded-xl font-semibold transition cursor-pointer border flex items-center gap-1 ${
+                    orderFilterStatus === 'Başarısız'
+                      ? 'bg-rose-600 text-white border-rose-700'
+                      : 'bg-rose-50 text-rose-900 border-rose-200 hover:bg-rose-100'
+                  }`}
+                >
+                  <span className="w-2 h-2 rounded-full bg-rose-500" />
+                  Başarısız ({orders.filter((o) => o.status === 'Başarısız' || o.status === 'İptal Edildi').length})
+                </button>
               </div>
             </div>
 
-            {/* Orders Table */}
-            <div className="space-y-3">
+            {/* Orders List */}
+            <div className="space-y-4">
               {filteredOrders.length === 0 ? (
-                <div className="text-center py-12 text-zinc-400 text-xs">
-                  Herhangi bir sipariş kaydı bulunmuyor.
+                <div className="text-center py-14 text-zinc-400 text-xs space-y-2">
+                  <ShoppingBag className="w-8 h-8 mx-auto text-zinc-300" />
+                  <p>Bu filtrede herhangi bir sipariş kaydı bulunmuyor.</p>
                 </div>
               ) : (
-                filteredOrders.map((ord) => (
-                  <div
-                    key={ord.id}
-                    className="border border-zinc-200/80 rounded-xl p-4 sm:p-5 hover:border-zinc-300 transition bg-white space-y-3"
-                  >
-                    <div className="flex flex-wrap items-center justify-between gap-3 pb-3 border-b border-zinc-100">
-                      <div>
-                        <div className="flex items-center gap-2">
-                          <span className="font-mono font-bold text-xs text-zinc-900">
-                            {ord.orderNumber}
-                          </span>
-                          <span className="text-[11px] text-zinc-400">
-                            • {formatDate(ord.createdAt)}
-                          </span>
-                        </div>
-                        <div className="text-xs text-zinc-800 mt-1 font-medium">
-                          {ord.shippingAddress.fullName} ({ord.shippingAddress.phone} - {ord.shippingAddress.email})
-                        </div>
-                        <div className="text-[11px] text-zinc-500">
-                          Müşteri Notu: {ord.shippingAddress.notes || 'Yok'}
-                        </div>
-                      </div>
+                filteredOrders.map((ord) => {
+                  const isPending =
+                    ord.status === 'İnceleniyor' ||
+                    ord.status === 'Sipariş Alındı' ||
+                    ord.status === 'Hazırlanıyor';
+                  const isSuccess = ord.status === 'Başarılı' || ord.status === 'Teslim Edildi';
+                  const isFailed = ord.status === 'Başarısız' || ord.status === 'İptal Edildi';
 
-                      {/* Status Update Control */}
-                      <div className="flex items-center gap-3">
-                        <div className="text-right">
-                          <div className="text-sm font-bold text-zinc-950">{formatPrice(ord.total)}</div>
-                          <span className="text-[10px] text-emerald-600 font-medium">Ödeme Onaylandı</span>
-                        </div>
+                  const detailState = editingOrderDetails[ord.id] || {
+                    digitalCode: ord.digitalCode || '',
+                    adminNote: ord.adminNote || '',
+                    isSaved: false,
+                  };
 
-                        <select
-                          value={ord.status}
-                          onChange={(e) =>
-                            handleUpdateOrderStatus(ord.id, e.target.value as OrderStatus)
-                          }
-                          className="px-3 py-1.5 bg-zinc-100 hover:bg-zinc-200 border border-zinc-200 rounded-xl text-xs font-semibold cursor-pointer text-zinc-900 focus:ring-1 focus:ring-zinc-900 focus:outline-none"
-                        >
-                          <option value="Sipariş Alındı">Sipariş Alındı</option>
-                          <option value="Hazırlanıyor">Hazırlanıyor</option>
-                          <option value="Teslim Edildi">Teslim Edildi</option>
-                          <option value="İptal Edildi">İptal Edildi</option>
-                        </select>
-                      </div>
-                    </div>
+                  return (
+                    <div
+                      key={ord.id}
+                      className={`border rounded-2xl p-4 sm:p-5 transition shadow-2xs space-y-4 ${
+                        isPending
+                          ? 'border-amber-300 bg-amber-50/20'
+                          : isSuccess
+                          ? 'border-emerald-200 bg-emerald-50/10'
+                          : isFailed
+                          ? 'border-rose-200 bg-rose-50/10'
+                          : 'border-zinc-200 bg-white'
+                      }`}
+                    >
+                      {/* Top Bar: Order ID, Date, Customer & Price */}
+                      <div className="flex flex-wrap items-start justify-between gap-3 pb-3 border-b border-zinc-100">
+                        <div className="space-y-1">
+                          <div className="flex items-center gap-2 flex-wrap">
+                            <span className="font-mono font-black text-xs text-zinc-900 bg-zinc-100 px-2 py-0.5 rounded-md">
+                              {ord.orderNumber}
+                            </span>
+                            <span className="text-[11px] text-zinc-400">
+                              • {formatDate(ord.createdAt)}
+                            </span>
 
-                    {/* Items List */}
-                    <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-2 pt-1">
-                      {ord.items.map((item, idx) => (
-                        <div
-                          key={idx}
-                          className="bg-zinc-50/70 rounded-lg p-2 flex items-center gap-2 text-xs border border-zinc-100"
-                        >
-                          {item.image && (
-                            <img
-                              src={item.image}
-                              alt={item.title}
-                              referrerPolicy="no-referrer"
-                              className="w-8 h-8 rounded object-cover bg-zinc-900"
-                            />
-                          )}
-                          <div className="truncate">
-                            <div className="font-semibold text-zinc-900 truncate">{item.title}</div>
-                            <div className="text-[11px] text-zinc-500">
-                              {item.quantity} Adet • {formatPrice(item.price)}
-                            </div>
+                            {/* Live Badge */}
+                            {isPending && (
+                              <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-100 text-amber-800 border border-amber-300 flex items-center gap-1">
+                                <span className="w-1.5 h-1.5 rounded-full bg-amber-500 animate-ping" />
+                                İnceleniyor / Onay Bekliyor
+                              </span>
+                            )}
+                            {isSuccess && (
+                              <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-100 text-emerald-800 border border-emerald-300">
+                                ✓ Onaylandı / Başarılı
+                              </span>
+                            )}
+                            {isFailed && (
+                              <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-rose-100 text-rose-800 border border-rose-300">
+                                ✕ Başarısız / İptal
+                              </span>
+                            )}
+                          </div>
+
+                          <div className="text-xs text-zinc-800 font-semibold">
+                            {ord.shippingAddress?.fullName || 'İsimsiz Müşteri'} &nbsp;
+                            <span className="text-zinc-500 font-normal">
+                              ({ord.shippingAddress?.phone || 'Tel Yok'} - {ord.shippingAddress?.email || ord.userEmail})
+                            </span>
                           </div>
                         </div>
-                      ))}
+
+                        {/* Amount & Status Change Controls */}
+                        <div className="flex flex-col sm:flex-row items-start sm:items-center gap-3">
+                          <div className="text-left sm:text-right">
+                            <div className="text-sm font-black text-zinc-950">{formatPrice(ord.total)}</div>
+                            <span className="text-[10px] text-zinc-500 font-medium">
+                              Ödeme Yöntemi: {ord.payment?.method === 'lemon_squeezy' ? 'Lemon Squeezy' : 'Kredi Kartı'}
+                            </span>
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* Rapid Status Buttons */}
+                      <div className="flex flex-wrap items-center gap-2 p-2.5 bg-zinc-50 rounded-xl border border-zinc-100">
+                        <span className="text-[11px] font-bold text-zinc-600 mr-1">Durumu İşaretle:</span>
+
+                        <button
+                          onClick={() => handleUpdateOrderStatus(ord.id, 'Başarılı')}
+                          className={`px-3 py-1.5 rounded-lg text-xs font-bold transition flex items-center gap-1.5 cursor-pointer shadow-2xs ${
+                            ord.status === 'Başarılı'
+                              ? 'bg-emerald-600 text-white'
+                              : 'bg-white hover:bg-emerald-50 text-emerald-700 border border-emerald-300'
+                          }`}
+                        >
+                          <CheckCircle className="w-3.5 h-3.5" />
+                          <span>Başarılı Olarak Onayla</span>
+                        </button>
+
+                        <button
+                          onClick={() => handleUpdateOrderStatus(ord.id, 'Başarısız')}
+                          className={`px-3 py-1.5 rounded-lg text-xs font-bold transition flex items-center gap-1.5 cursor-pointer shadow-2xs ${
+                            ord.status === 'Başarısız' || ord.status === 'İptal Edildi'
+                              ? 'bg-rose-600 text-white'
+                              : 'bg-white hover:bg-rose-50 text-rose-700 border border-rose-300'
+                          }`}
+                        >
+                          <X className="w-3.5 h-3.5" />
+                          <span>Başarısız / İptal Et</span>
+                        </button>
+
+                        <button
+                          onClick={() => handleUpdateOrderStatus(ord.id, 'İnceleniyor')}
+                          className={`px-3 py-1.5 rounded-lg text-xs font-bold transition flex items-center gap-1.5 cursor-pointer shadow-2xs ${
+                            ord.status === 'İnceleniyor'
+                              ? 'bg-amber-500 text-black'
+                              : 'bg-white hover:bg-amber-50 text-amber-800 border border-amber-300'
+                          }`}
+                        >
+                          <Clock className="w-3.5 h-3.5" />
+                          <span>İnceleniyor Yap</span>
+                        </button>
+
+                        <button
+                          onClick={() => handleUpdateOrderStatus(ord.id, 'Teslim Edildi')}
+                          className={`px-3 py-1.5 rounded-lg text-xs font-medium transition flex items-center gap-1.5 cursor-pointer ${
+                            ord.status === 'Teslim Edildi'
+                              ? 'bg-blue-600 text-white font-bold'
+                              : 'bg-white hover:bg-zinc-100 text-zinc-700 border border-zinc-200'
+                          }`}
+                        >
+                          <span>Teslim Edildi</span>
+                        </button>
+                      </div>
+
+                      {/* Digital License / Delivery Code Input */}
+                      <div className="bg-zinc-900 text-white rounded-xl p-3.5 space-y-3">
+                        <div className="flex items-center justify-between">
+                          <span className="text-xs font-bold text-emerald-400 flex items-center gap-1.5">
+                            <Zap className="w-3.5 h-3.5 text-emerald-400 fill-emerald-400" />
+                            Müşteriye İletilecek Dijital Lisans / İndirme Kodu
+                          </span>
+                          <span className="text-[10px] text-zinc-400">
+                            (Müşterinin "Sipariş İnceleniyor" ekranında anında görünür)
+                          </span>
+                        </div>
+
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-xs">
+                          <div>
+                            <label className="text-[11px] text-zinc-400 block mb-1">Lisans Kodu / Anahtar:</label>
+                            <input
+                              type="text"
+                              value={detailState.digitalCode}
+                              onChange={(e) =>
+                                setEditingOrderDetails((prev) => ({
+                                  ...prev,
+                                  [ord.id]: { ...detailState, digitalCode: e.target.value, isSaved: false },
+                                }))
+                              }
+                              placeholder="Örn: P12-CERT-99482-VIP / Kod"
+                              className="w-full px-3 py-1.5 bg-black border border-zinc-700 rounded-lg text-white font-mono text-xs focus:ring-1 focus:ring-emerald-400 focus:outline-none"
+                            />
+                          </div>
+
+                          <div>
+                            <label className="text-[11px] text-zinc-400 block mb-1">Yönetici Açıklaması / Bilgi:</label>
+                            <input
+                              type="text"
+                              value={detailState.adminNote}
+                              onChange={(e) =>
+                                setEditingOrderDetails((prev) => ({
+                                  ...prev,
+                                  [ord.id]: { ...detailState, adminNote: e.target.value, isSaved: false },
+                                }))
+                              }
+                              placeholder="Örn: Kurulum linkiniz WhatsApp'tan da iletildi."
+                              className="w-full px-3 py-1.5 bg-black border border-zinc-700 rounded-lg text-white text-xs focus:ring-1 focus:ring-emerald-400 focus:outline-none"
+                            />
+                          </div>
+                        </div>
+
+                        <div className="flex justify-end gap-2 pt-1">
+                          <button
+                            onClick={() => {
+                              handleSaveOrderDigitalDetails(
+                                ord.id,
+                                detailState.digitalCode,
+                                detailState.adminNote,
+                                'Başarılı'
+                              );
+                              setEditingOrderDetails((prev) => ({
+                                ...prev,
+                                [ord.id]: { ...detailState, isSaved: true },
+                              }));
+                            }}
+                            className="px-4 py-1.5 bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs rounded-lg transition flex items-center gap-1.5 cursor-pointer shadow-xs"
+                          >
+                            <CheckCircle className="w-3.5 h-3.5" />
+                            <span>Kodu Kaydet & Siparişi Başarılı Yap</span>
+                          </button>
+                        </div>
+                      </div>
+
+                      {/* Items List */}
+                      <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-2 pt-1">
+                        {ord.items.map((item, idx) => (
+                          <div
+                            key={idx}
+                            className="bg-zinc-50 rounded-lg p-2 flex items-center gap-2 text-xs border border-zinc-100"
+                          >
+                            {item.image && (
+                              <img
+                                src={item.image}
+                                alt={item.title}
+                                referrerPolicy="no-referrer"
+                                className="w-8 h-8 rounded object-cover bg-zinc-900"
+                              />
+                            )}
+                            <div className="truncate">
+                              <div className="font-semibold text-zinc-900 truncate">{item.title}</div>
+                              <div className="text-[11px] text-zinc-500">
+                                {item.quantity} Adet • {formatPrice(item.price)}
+                              </div>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
                     </div>
-                  </div>
-                ))
+                  );
+                })
               )}
             </div>
           </div>

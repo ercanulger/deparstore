@@ -109,7 +109,7 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
         method: 'credit_card',
         paidAt: new Date().toISOString(),
       },
-      status: 'Sipariş Alındı',
+      status: 'İnceleniyor',
       createdAt: new Date().toISOString(),
     };
 
@@ -117,8 +117,10 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
       // Save directly to Firebase Firestore `orders` collection
       const orderRef = doc(db, 'orders', newOrder.id);
       await setDoc(orderRef, newOrder);
+      localStorage.setItem('deparstore_active_order_id', newOrder.id);
     } catch (err) {
       console.warn('Firestore write warning for orders:', err);
+      localStorage.setItem('deparstore_active_order_id', newOrder.id);
     }
 
     // Save locally or in state for immediate UI feedback

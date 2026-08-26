@@ -13,16 +13,23 @@ import {
   Sparkles,
   Plus,
   Minus,
-  Check
+  Check,
+  User,
+  Mail,
+  Phone
 } from 'lucide-react';
-import { Product } from '../types';
-import { formatPrice, calculateDiscount } from '../lib/utils';
+import { Product, Order } from '../types';
+import { formatPrice, calculateDiscount, generateOrderNumber } from '../lib/utils';
 import { useCart } from '../context/CartContext';
+import { useAuth } from '../context/AuthContext';
+import { doc, setDoc } from 'firebase/firestore';
+import { db } from '../lib/firebase';
 
 interface ProductDetailModalProps {
   product: Product | null;
   onClose: () => void;
   onDirectCheckout: (product: Product, quantity: number) => void;
+  onOrderInitiated?: (order: Order) => void;
   whatsappNumber?: string;
 }
 
@@ -30,14 +37,20 @@ export const ProductDetailModal: React.FC<ProductDetailModalProps> = ({
   product,
   onClose,
   onDirectCheckout,
+  onOrderInitiated,
   whatsappNumber = '905010000000',
 }) => {
   if (!product) return null;
 
   const { addToCart } = useCart();
+  const { user, userProfile } = useAuth();
   const [selectedImageIndex, setSelectedImageIndex] = useState(0);
   const [quantity, setQuantity] = useState(1);
   const [isAdded, setIsAdded] = useState(false);
+  const [showQuickOrderForm, setShowQuickOrderForm] = useState(false);
+  const [customerName, setCustomerName] = useState(userProfile?.displayName || '');
+  const [customerEmail, setCustomerEmail] = useState(userProfile?.email || user?.email || '');
+  const [customerPhone, setCustomerPhone] = useState(userProfile?.phone || '');
 
   const images =
     product.images && product.images.length > 0
@@ -53,7 +66,6 @@ export const ProductDetailModal: React.FC<ProductDetailModalProps> = ({
       : 0;
 
   const isOutOfStock = product.stock <= 0;
-  const isLowStock = product.stock > 0 && product.stock <= 5;
 
   const handleAddToCart = () => {
     if (isOutOfStock) return;
@@ -62,19 +74,71 @@ export const ProductDetailModal: React.FC<ProductDetailModalProps> = ({
     setTimeout(() => setIsAdded(false), 2000);
   };
 
-  const handleLemonSqueezyCheckout = () => {
-    if (isOutOfStock) return;
+  const createAndTrackOrder = async () => {
+    const orderNumber = generateOrderNumber();
+    const newOrder: Order = {
+      id: `ord_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`,
+      orderNumber,
+      userId: user?.uid || userProfile?.uid || 'guest_user',
+      userEmail: customerEmail || 'musteri@deparstore.com',
+      items: [
+        {
+          id: product.id,
+          title: product.title,
+          price: effectivePrice,
+          quantity: quantity,
+          image: images[0] || '',
+          paymentUrl: product.paymentUrl,
+          specs: product.specs || [],
+        },
+      ],
+      subtotal: effectivePrice * quantity,
+      shippingFee: 0,
+      discountAmount: savings * quantity,
+      total: effectivePrice * quantity,
+      shippingAddress: {
+        fullName: customerName || userProfile?.displayName || 'Müşteri',
+        email: customerEmail || userProfile?.email || user?.email || '',
+        phone: customerPhone || userProfile?.phone || '',
+        addressDetail: 'Dijital Teslimat / Lemon Squeezy',
+        city: 'Dijital',
+      },
+      payment: {
+        cardHolder: customerName || 'Dijital Ödeme',
+        method: product.paymentUrl ? 'lemon_squeezy' : 'credit_card',
+        paidAt: new Date().toISOString(),
+        paymentUrl: product.paymentUrl,
+      },
+      status: 'İnceleniyor',
+      createdAt: new Date().toISOString(),
+    };
+
+    try {
+      await setDoc(doc(db, 'orders', newOrder.id), newOrder);
+      localStorage.setItem('deparstore_active_order_id', newOrder.id);
+    } catch (e) {
+      console.warn('Firestore order write note:', e);
+      localStorage.setItem('deparstore_active_order_id', newOrder.id);
+    }
+
     if (product.paymentUrl) {
       window.open(product.paymentUrl, '_blank', 'noopener,noreferrer');
-    } else {
-      addToCart(product, quantity);
-      onDirectCheckout(product, quantity);
-      onClose();
+    }
+
+    onClose();
+    if (onOrderInitiated) {
+      onOrderInitiated(newOrder);
     }
   };
 
+  const handleLemonSqueezyCheckout = () => {
+    if (isOutOfStock) return;
+    createAndTrackOrder();
+  };
+
   const handleWhatsAppOrder = () => {
-    const text = `Merhaba DeparStore, "${product.title}" (${formatPrice(effectivePrice)}) ürününüzü satın almak istiyorum. Ödeme ve anında teslimat detaylarını iletebilir misiniz?`;
+    createAndTrackOrder();
+    const text = `Merhaba DeparStore, "${product.title}" (${formatPrice(effectivePrice)}) ürününüzü satın almak ve onaylatmak istiyorum.`;
     const cleanPhone = whatsappNumber.replace(/\D/g, '');
     const waUrl = `https://wa.me/${cleanPhone}?text=${encodeURIComponent(text)}`;
     window.open(waUrl, '_blank', 'noopener,noreferrer');

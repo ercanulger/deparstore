@@ -20,6 +20,7 @@ import { ProductDetailModal } from './components/ProductDetailModal';
 import { CartDrawer } from './components/CartDrawer';
 import { CheckoutModal } from './components/CheckoutModal';
 import { OrderHistoryModal } from './components/OrderHistoryModal';
+import { OrderStatusModal } from './components/OrderStatusModal';
 import { AuthModal } from './components/AuthModal';
 import { AdminPanel } from './components/AdminPanel';
 import { AdminLogin } from './components/AdminLogin';
@@ -32,12 +33,22 @@ function StoreApp() {
   const { user, userProfile } = useAuth();
   const { isCartOpen, setIsCartOpen } = useCart();
 
-  // Route state (Checks /admin or #/admin in URL)
+  // Route state (Checks /admin, #/admin, ?admin in URL)
   const checkIsAdminPath = () => {
     if (typeof window === 'undefined') return false;
-    const path = window.location.pathname.toLowerCase();
-    const hash = window.location.hash.toLowerCase();
-    return path === '/admin' || path.startsWith('/admin') || hash === '#/admin' || hash.startsWith('#/admin');
+    const path = (window.location.pathname || '').toLowerCase();
+    const hash = (window.location.hash || '').toLowerCase();
+    const search = (window.location.search || '').toLowerCase();
+
+    return (
+      path === '/admin' ||
+      path.startsWith('/admin') ||
+      path.includes('/admin') ||
+      hash === '#/admin' ||
+      hash.startsWith('#/admin') ||
+      hash.includes('admin') ||
+      search.includes('admin')
+    );
   };
 
   const [isAdminRoute, setIsAdminRoute] = useState<boolean>(checkIsAdminPath);
@@ -49,17 +60,23 @@ function StoreApp() {
     );
   });
 
-  // Listen to browser URL changes (popstate, hashchange)
+  // Listen to browser URL changes (popstate, hashchange, plus lightweight polling for iframe safety)
   useEffect(() => {
     const handleUrlChange = () => {
-      setIsAdminRoute(checkIsAdminPath());
+      const isAdm = checkIsAdminPath();
+      setIsAdminRoute((prev) => (prev !== isAdm ? isAdm : prev));
     };
 
     window.addEventListener('popstate', handleUrlChange);
     window.addEventListener('hashchange', handleUrlChange);
+    
+    // Check periodically for URL changes
+    const interval = setInterval(handleUrlChange, 250);
+
     return () => {
       window.removeEventListener('popstate', handleUrlChange);
       window.removeEventListener('hashchange', handleUrlChange);
+      clearInterval(interval);
     };
   }, []);
 
@@ -76,6 +93,19 @@ function StoreApp() {
   const [isCheckoutOpen, setIsCheckoutOpen] = useState(false);
   const [isOrderHistoryOpen, setIsOrderHistoryOpen] = useState(false);
   const [isAuthOpen, setIsAuthOpen] = useState(false);
+  const [activeReviewOrder, setActiveReviewOrder] = useState<Order | null>(null);
+  const [isOrderStatusOpen, setIsOrderStatusOpen] = useState<boolean>(false);
+
+  // Restore active review order from localStorage or sync with orders array
+  useEffect(() => {
+    const savedOrderId = localStorage.getItem('deparstore_active_order_id');
+    if (savedOrderId && orders.length > 0) {
+      const match = orders.find((o) => o.id === savedOrderId);
+      if (match) {
+        setActiveReviewOrder(match);
+      }
+    }
+  }, [orders]);
 
   // Filter & Search State
   const [filters, setFilters] = useState<FilterState>({
@@ -327,6 +357,8 @@ function StoreApp() {
         currentCategory={filters.category}
         searchQuery={filters.search}
         onSearchChange={(q) => setFilters((prev) => ({ ...prev, search: q }))}
+        activePendingOrder={activeReviewOrder}
+        onOpenOrderStatus={() => setIsOrderStatusOpen(true)}
       />
 
       {/* Main Container */}
@@ -434,6 +466,10 @@ function StoreApp() {
         product={selectedProduct}
         onClose={() => setSelectedProduct(null)}
         onDirectCheckout={handleDirectCheckout}
+        onOrderInitiated={(newOrder) => {
+          setActiveReviewOrder(newOrder);
+          setIsOrderStatusOpen(true);
+        }}
         whatsappNumber={storeWhatsApp}
       />
 
@@ -446,6 +482,18 @@ function StoreApp() {
       <CheckoutModal
         isOpen={isCheckoutOpen}
         onClose={() => setIsCheckoutOpen(false)}
+        onOrderSuccess={(newOrder) => {
+          setActiveReviewOrder(newOrder);
+          setIsOrderStatusOpen(true);
+        }}
+        whatsappNumber={storeWhatsApp}
+      />
+
+      {/* Live Order Status / Review Modal */}
+      <OrderStatusModal
+        isOpen={isOrderStatusOpen}
+        order={activeReviewOrder}
+        onClose={() => setIsOrderStatusOpen(false)}
         whatsappNumber={storeWhatsApp}
       />
 
@@ -453,6 +501,13 @@ function StoreApp() {
       <OrderHistoryModal
         isOpen={isOrderHistoryOpen}
         onClose={() => setIsOrderHistoryOpen(false)}
+        orders={orders}
+      />
+
+      {/* Customer Auth Modal (Login / Register) */}
+      <AuthModal
+        isOpen={isAuthOpen}
+        onClose={() => setIsAuthOpen(false)}
       />
 
       {/* Customer Auth Modal (Login / Register) */}

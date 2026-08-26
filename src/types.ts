@@ -53,7 +53,14 @@ export interface UserProfile {
   createdAt?: string;
 }
 
-export type OrderStatus = 'Sipariş Alındı' | 'Hazırlanıyor' | 'Teslim Edildi' | 'İptal Edildi';
+export type OrderStatus =
+  | 'İnceleniyor'
+  | 'Başarılı'
+  | 'Başarısız'
+  | 'Sipariş Alındı'
+  | 'Hazırlanıyor'
+  | 'Teslim Edildi'
+  | 'İptal Edildi';
 
 export interface OrderItem {
   id: string;
@@ -100,7 +107,9 @@ export interface Order {
   payment: PaymentDetails;
   status: OrderStatus;
   notes?: string;
+  adminNote?: string;
   digitalCode?: string;
+  trackingNumber?: string;
   createdAt: string;
   updatedAt?: string;
 }
