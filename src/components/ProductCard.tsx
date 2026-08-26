@@ -3,7 +3,7 @@ import { ShoppingBag, Star, Eye, Check, Zap, ShieldCheck, Sparkles, ExternalLink
 import { Product } from '../types';
 import { formatPrice, calculateDiscount, generateOrderNumber } from '../lib/utils';
 import { useCart } from '../context/CartContext';
-import { createLemonCheckout } from '../lib/lemonSqueezy';
+import { createLemonCheckout, redirectToLemonCheckout, getSuccessRedirectUrl } from '../lib/lemonSqueezy';
 import { doc, setDoc } from 'firebase/firestore';
 import { db } from '../lib/firebase';
 import { useAuth } from '../context/AuthContext';
@@ -89,11 +89,12 @@ export const ProductCard: React.FC<ProductCardProps> = ({ product, onOpenDetails
       orderId: orderNumber,
       customerEmail: user?.email,
       customerName: userProfile?.displayName,
-      redirectUrl: `https://deparstore.me/odeme-basarili?order_id=${encodeURIComponent(orderNumber)}`,
+      redirectUrl: getSuccessRedirectUrl(orderNumber),
     });
 
     if (res.success && res.url) {
-      window.location.href = res.url;
+      setIsLoadingCheckout(false);
+      redirectToLemonCheckout(res.url);
     } else {
       setIsLoadingCheckout(false);
       // If checkout fails, fallback to opening details modal

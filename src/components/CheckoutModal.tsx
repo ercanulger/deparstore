@@ -21,7 +21,7 @@ import { useAuth } from '../context/AuthContext';
 import { useCart } from '../context/CartContext';
 import { Order, OrderAddress, PaymentDetails } from '../types';
 import { formatPrice, generateOrderNumber } from '../lib/utils';
-import { createLemonCheckout } from '../lib/lemonSqueezy';
+import { createLemonCheckout, redirectToLemonCheckout, getSuccessRedirectUrl } from '../lib/lemonSqueezy';
 
 interface CheckoutModalProps {
   isOpen: boolean;
@@ -137,14 +137,15 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
       customerName: address.fullName,
       customerPhone: address.phone,
       orderId: orderNumber,
-      redirectUrl: `https://deparstore.me/odeme-basarili?order_id=${encodeURIComponent(orderNumber)}`,
+      redirectUrl: getSuccessRedirectUrl(orderNumber),
     });
+
+    setIsLemonLoading(false);
 
     if (res.success && res.url) {
       clearCart();
-      window.location.href = res.url;
+      redirectToLemonCheckout(res.url);
     } else {
-      setIsLemonLoading(false);
       setCheckoutError(res.error || 'Lemon Squeezy ödeme bağlantısı oluşturulamadı.');
     }
   };

@@ -26,7 +26,7 @@ import { useCart } from '../context/CartContext';
 import { useAuth } from '../context/AuthContext';
 import { doc, setDoc } from 'firebase/firestore';
 import { db } from '../lib/firebase';
-import { createLemonCheckout } from '../lib/lemonSqueezy';
+import { createLemonCheckout, redirectToLemonCheckout, getSuccessRedirectUrl } from '../lib/lemonSqueezy';
 
 interface ProductDetailModalProps {
   product: Product | null;
@@ -55,6 +55,7 @@ export const ProductDetailModal: React.FC<ProductDetailModalProps> = ({
   const [customerName, setCustomerName] = useState(userProfile?.displayName || '');
   const [customerEmail, setCustomerEmail] = useState(userProfile?.email || user?.email || '');
   const [customerPhone, setCustomerPhone] = useState(userProfile?.phone || '');
+  const [createdCheckoutUrl, setCreatedCheckoutUrl] = useState<string | null>(null);
 
   const images =
     product.images && product.images.length > 0
@@ -85,6 +86,7 @@ export const ProductDetailModal: React.FC<ProductDetailModalProps> = ({
     
     setIsCheckoutLoading(true);
     setCheckoutError(null);
+    setCreatedCheckoutUrl(null);
 
     const orderNumber = generateOrderNumber();
     const newOrder: Order = {
@@ -142,15 +144,17 @@ export const ProductDetailModal: React.FC<ProductDetailModalProps> = ({
       price: totalPrice,
       customerEmail: customerEmail || user?.email,
       customerName: customerName || userProfile?.displayName,
+      customerPhone: customerPhone,
       orderId: orderNumber,
-      redirectUrl: `https://deparstore.me/odeme-basarili?order_id=${encodeURIComponent(orderNumber)}`,
+      redirectUrl: getSuccessRedirectUrl(orderNumber),
     });
 
+    setIsCheckoutLoading(false);
+
     if (result.success && result.url) {
-      // Redirect customer to the dynamically generated Lemon Squeezy checkout URL
-      window.location.href = result.url;
+      setCreatedCheckoutUrl(result.url);
+      redirectToLemonCheckout(result.url);
     } else {
-      setIsCheckoutLoading(false);
       setCheckoutError(result.error || 'Ödeme bağlantısı oluşturulamadı.');
     }
   };
@@ -353,6 +357,25 @@ export const ProductDetailModal: React.FC<ProductDetailModalProps> = ({
                 <div className="p-3 bg-rose-50 border border-rose-200 rounded-xl flex items-center gap-2 text-xs text-rose-700">
                   <AlertCircle className="w-4 h-4 shrink-0 text-rose-600" />
                   <span>{checkoutError}</span>
+                </div>
+              )}
+
+              {/* Direct Link button if window popup was blocked */}
+              {createdCheckoutUrl && (
+                <div className="p-3 bg-emerald-50 border border-emerald-300 rounded-xl space-y-2 text-center animate-in fade-in">
+                  <p className="text-xs text-emerald-900 font-semibold">
+                    Ödeme sayfası hazırlandı! Tarayıcınız yeni sekmeyi engellediyse aşağıdaki butona tıklayın:
+                  </p>
+                  <a
+                    href={createdCheckoutUrl}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="inline-flex items-center justify-center gap-1.5 px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs rounded-lg shadow-sm transition w-full"
+                  >
+                    <Zap className="w-3.5 h-3.5 fill-current" />
+                    <span>Ödeme Sayfasına Git (Yeni Sekme)</span>
+                    <ExternalLink className="w-3.5 h-3.5" />
+                  </a>
                 </div>
               )}
 

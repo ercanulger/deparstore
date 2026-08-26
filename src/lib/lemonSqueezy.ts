@@ -21,6 +21,44 @@ export interface CheckoutResponse {
   error?: string;
 }
 
+export function getSuccessRedirectUrl(orderId: string): string {
+  if (typeof window !== 'undefined' && window.location.origin) {
+    return `${window.location.origin}/odeme-basarili?order_id=${encodeURIComponent(orderId)}`;
+  }
+  return `https://deparstore.me/odeme-basarili?order_id=${encodeURIComponent(orderId)}`;
+}
+
+/**
+ * Open Lemon Squeezy checkout in a new window/tab safely breaking out of iframes
+ */
+export function redirectToLemonCheckout(url: string): boolean {
+  if (!url || typeof window === 'undefined') return false;
+
+  try {
+    // 1. Try opening clean new tab/window
+    const newWindow = window.open(url, '_blank', 'noopener,noreferrer');
+    if (newWindow) {
+      return true;
+    }
+  } catch (err) {
+    console.warn('window.open failed, trying window.location:', err);
+  }
+
+  // 2. Direct top-level navigation if popup was blocked
+  try {
+    if (window.top && window.top !== window) {
+      window.top.location.href = url;
+      return true;
+    }
+  } catch (_) {
+    // Cross-origin iframe fallback
+  }
+
+  // 3. Current window navigation
+  window.location.href = url;
+  return true;
+}
+
 export async function createLemonCheckout(
   params: CreateCheckoutParams
 ): Promise<CheckoutResponse> {
