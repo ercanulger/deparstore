@@ -8,6 +8,7 @@ import {
   deleteDoc,
 } from 'firebase/firestore';
 import { db, testConnection } from './lib/firebase';
+import { getPendingOrder, clearPendingOrder } from './lib/lemonSqueezy';
 import { AuthProvider, useAuth } from './context/AuthContext';
 import { CartProvider, useCart } from './context/CartContext';
 import { Product, Order, FilterState, Category } from './types';
@@ -120,6 +121,29 @@ function StoreApp() {
       clearInterval(interval);
     };
   }, []);
+
+  // Ödeme GERÇEKTEN başarıyla tamamlanıp Lemon Squeezy kullanıcıyı
+  // /odeme-basarili sayfasına geri yönlendirdiğinde, o siparişin yerelde
+  // bekleyen taslağını Firestore'a yazar. Sipariş, bu noktaya kadar
+  // Firestore'a hiç yazılmaz - böylece ödeme sayfasından vazgeçilen veya
+  // tamamlanmayan denemeler sipariş geçmişinde/panelinde görünmez.
+  useEffect(() => {
+    if (currentRoute !== 'payment-success' || !currentOrderIdParam) return;
+
+    const pendingOrder = getPendingOrder(currentOrderIdParam);
+    if (!pendingOrder) return;
+
+    (async () => {
+      try {
+        await setDoc(doc(db, 'orders', pendingOrder.id), pendingOrder);
+        localStorage.setItem('deparstore_active_order_id', pendingOrder.id);
+      } catch (err) {
+        console.warn('Ödeme onaylandı fakat sipariş Firestore\'a yazılamadı:', err);
+      } finally {
+        clearPendingOrder(currentOrderIdParam);
+      }
+    })();
+  }, [currentRoute, currentOrderIdParam]);
 
   // Primary Data State
   const [products, setProducts] = useState<Product[]>(INITIAL_PRODUCTS);
@@ -577,10 +601,6 @@ function StoreApp() {
         product={selectedProduct}
         onClose={() => setSelectedProduct(null)}
         onDirectCheckout={handleDirectCheckout}
-        onOrderInitiated={(newOrder) => {
-          setActiveReviewOrder(newOrder);
-          setIsOrderStatusOpen(true);
-        }}
         whatsappNumber={storeWhatsApp}
       />
 
@@ -593,11 +613,6 @@ function StoreApp() {
       <CheckoutModal
         isOpen={isCheckoutOpen}
         onClose={() => setIsCheckoutOpen(false)}
-        onOrderSuccess={(newOrder) => {
-          setActiveReviewOrder(newOrder);
-          setIsOrderStatusOpen(true);
-        }}
-        whatsappNumber={storeWhatsApp}
       />
 
       {/* Live Order Status / Review Modal */}
@@ -613,12 +628,6 @@ function StoreApp() {
         isOpen={isOrderHistoryOpen}
         onClose={() => setIsOrderHistoryOpen(false)}
         orders={orders}
-      />
-
-      {/* Customer Auth Modal (Login / Register) */}
-      <AuthModal
-        isOpen={isAuthOpen}
-        onClose={() => setIsAuthOpen(false)}
       />
 
       {/* Customer Auth Modal (Login / Register) */}
