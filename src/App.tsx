@@ -6,6 +6,8 @@ import {
   setDoc,
   getDocs,
   deleteDoc,
+  query,
+  where,
 } from 'firebase/firestore';
 import { db, testConnection } from './lib/firebase';
 import { getPendingOrder, clearPendingOrder } from './lib/lemonSqueezy';
@@ -35,6 +37,11 @@ import { Package, ShieldAlert, Sparkles, Plus, AlertCircle, ShoppingBag } from '
 function StoreApp() {
   const { user, userProfile } = useAuth();
   const { isCartOpen, setIsCartOpen } = useCart();
+  // Ödeme onayı anında yerelde okunan sipariş taslağı: Firestore'a "kendi
+  // siparişlerim" sorgusu henüz ulaşmamış olsa bile (ör. misafir/guest
+  // checkout, çünkü misafir siparişleri artık toplu olarak listelenmiyor)
+  // ödeme başarılı sayfası doğru siparişi hemen gösterebilsin diye tutulur.
+  const [lastCompletedOrder, setLastCompletedOrder] = useState<Order | null>(null);
 
   // Multi-route detection (/admin, /odeme-basarili, /odeme-basarisiz)
   const getActiveRoute = (): 'store' | 'admin' | 'payment-success' | 'payment-failed' => {
@@ -132,6 +139,10 @@ function StoreApp() {
 
     const pendingOrder = getPendingOrder(currentOrderIdParam);
     if (!pendingOrder) return;
+
+    // Sadece bu tarayıcının bildiği taslağı state'e al - Firestore sorgusu
+    // beklemeden onay sayfasında hemen gösterilebilsin.
+    setLastCompletedOrder(pendingOrder);
 
     (async () => {
       try {
@@ -237,31 +248,7 @@ function StoreApp() {
       }
     );
 
-    // 2. Real-time Listen to orders collection
-    const unsubOrders = onSnapshot(
-      collection(db, 'orders'),
-      (snapshot) => {
-        if (!snapshot.empty) {
-          const loadedOrders: Order[] = [];
-          snapshot.forEach((docSnap) => {
-            const data = docSnap.data() as Order;
-            if (data && data.id) {
-              loadedOrders.push(data);
-            }
-          });
-          // Sort newest first
-          loadedOrders.sort((a, b) => new Date(b.createdAt || 0).getTime() - new Date(a.createdAt || 0).getTime());
-          setOrders(loadedOrders);
-        } else {
-          setOrders([]);
-        }
-      },
-      (error) => {
-        console.warn('Firestore orders listener fallback:', error);
-      }
-    );
-
-    // 3. Real-time Listen to store settings (WhatsApp number, announcement)
+    // 2. Real-time Listen to store settings (WhatsApp number, announcement)
     const unsubSettings = onSnapshot(
       doc(db, 'settings', 'general'),
       (docSnap) => {
@@ -279,10 +266,68 @@ function StoreApp() {
 
     return () => {
       unsubProducts();
-      unsubOrders();
       unsubSettings();
     };
   }, []);
+
+  // Siparişleri dinle: KİM olduğuna göre farklı bir sorgu kullanılır.
+  // - Admin panelindeyken (gerçekten admin oturumu açmışken): tüm siparişler.
+  // - Mağaza görünümünde: sadece giriş yapmış kullanıcının KENDİ siparişleri
+  //   (Firestore güvenlik kuralları da bunu zorunlu kılıyor - bkz. firestore.rules).
+  // Giriş yapılmamışsa (misafir) sipariş listesi boş kalır; misafirin kendi
+  // siparişi ödeme sonrası `lastCompletedOrder` ile ayrıca gösterilir.
+  useEffect(() => {
+    if (currentRoute === 'admin' && isAdminAuthenticated) {
+      const unsubAdminOrders = onSnapshot(
+        collection(db, 'orders'),
+        (snapshot) => {
+          const loadedOrders: Order[] = [];
+          snapshot.forEach((docSnap) => {
+            const data = docSnap.data() as Order;
+            if (data && data.id) {
+              loadedOrders.push(data);
+            }
+          });
+          loadedOrders.sort((a, b) => new Date(b.createdAt || 0).getTime() - new Date(a.createdAt || 0).getTime());
+          setOrders(loadedOrders);
+        },
+        (error) => {
+          // Bu, admin girişi artık gerçek bir Firebase Authentication oturumu
+          // gerektirdiği için, eski (yerel/sahte) admin oturumlarında beklenen bir durumdur.
+          console.warn('Admin sipariş listesi alınamadı (gerçek admin girişi gerekiyor):', error);
+          setOrders([]);
+        }
+      );
+      return () => unsubAdminOrders();
+    }
+
+    if (!user) {
+      setOrders([]);
+      return;
+    }
+
+    const ownOrdersQuery = query(collection(db, 'orders'), where('userId', '==', user.uid));
+    const unsubOwnOrders = onSnapshot(
+      ownOrdersQuery,
+      (snapshot) => {
+        const loadedOrders: Order[] = [];
+        snapshot.forEach((docSnap) => {
+          const data = docSnap.data() as Order;
+          if (data && data.id) {
+            loadedOrders.push(data);
+          }
+        });
+        loadedOrders.sort((a, b) => new Date(b.createdAt || 0).getTime() - new Date(a.createdAt || 0).getTime());
+        setOrders(loadedOrders);
+      },
+      (error) => {
+        console.warn('Sipariş geçmişi alınamadı:', error);
+        setOrders([]);
+      }
+    );
+
+    return () => unsubOwnOrders();
+  }, [currentRoute, isAdminAuthenticated, user]);
 
   // Compute categories with active product counts
   const categoriesWithCounts: Category[] = useMemo(() => {
@@ -413,7 +458,7 @@ function StoreApp() {
         />
         <PaymentSuccessPage
           orderId={currentOrderIdParam}
-          orders={orders}
+          orders={lastCompletedOrder ? [lastCompletedOrder, ...orders] : orders}
           onGoHome={handleBackToStore}
           whatsappNumber={storeWhatsApp}
         />
